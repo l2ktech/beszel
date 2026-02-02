@@ -1,0 +1,7 @@
+systems:
+  - name: 本地服务器
+    host: localhost
+    port: 45876
+    token: DC333BBF-890E-443E-B5F2-385631D19CE6
+    users:
+      - 442333521@qq.com

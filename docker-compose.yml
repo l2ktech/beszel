@@ -1,0 +1,31 @@
+services:
+  beszel:
+    image: 'henrygd/beszel'
+    container_name: 'beszel'
+    restart: unless-stopped
+    ports:
+      - '38005:8090'
+    volumes:
+      - ./beszel_data:/beszel_data
+    environment:
+      BESZEL_HUB_USER_EMAIL: '442333521@qq.com'
+      BESZEL_HUB_USER_PASSWORD: '!Wangzeyu66!@#'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+  beszel-agent:
+    image: 'henrygd/beszel-agent' #Add -nvidia for nvidia gpus
+    container_name: 'beszel-agent'
+    restart: unless-stopped
+    network_mode: host
+    # runtime: nvidia # when using beszel-agent-nvidia
+    volumes:
+      - ./beszel_agent_data:/var/lib/beszel-agent
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      PORT: 45876
+      KEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAq8t3HXdYTMp8kWBwUuCbuezv/i74jcGgTlWvSaKJVA'
+      TOKEN: '9A9EB189-E5B0-4D39-BCE3-D709929DA267'
+      # FILESYSTEM: /dev/sda1 # set to the correct filesystem for disk I/O stats
+      # NVIDIA_VISIBLE_DEVICES: all # when using beszel-agent-nvidia
+      # NVIDIA_DRIVER_CAPABILITIES: utility # when using beszel-agent-nvidia
