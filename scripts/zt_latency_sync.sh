@@ -84,7 +84,8 @@ PY
 }
 
 send_dingtalk() {
-  local text="$1"
+  local title="$1"
+  local text="$2"
   local url
   local payload
   local response
@@ -118,16 +119,18 @@ PY
     url="${url}&timestamp=${ts}&sign=${enc_sign}"
   fi
 
-  if [[ -n "$ALERT_DINGTALK_KEYWORD" ]]; then
-    text="${ALERT_DINGTALK_KEYWORD} ${text}"
-  fi
-
   payload=$(
-    /usr/bin/python3 - "$text" <<'PY'
+    /usr/bin/python3 - "$title" "$text" "$ALERT_DINGTALK_KEYWORD" <<'PY'
 import json
 import sys
-content = sys.argv[1]
-print(json.dumps({"msgtype": "text", "text": {"content": content}}, ensure_ascii=False))
+title = sys.argv[1]
+text = sys.argv[2]
+keyword = sys.argv[3]
+if keyword:
+    title = f"{keyword} {title}"
+    text = f"{keyword}\n\n{text}"
+payload = {"msgtype": "markdown", "markdown": {"title": title, "text": text}}
+print(json.dumps(payload, ensure_ascii=False))
 PY
   )
 
@@ -173,7 +176,56 @@ emit_alert() {
   local jitter_ms="$6"
   local streak="$7"
 
-  local msg="[Beszel-ZT][${alert_kind}] system=${system_name} host=${host} net=${network_label} latency=${latency_ms}ms jitter=${jitter_ms}ms streak=${streak}"
+  local marker
+  local kind_cn
+  local title
+  local msg
+  local latency_show
+  local jitter_show
+
+  case "$alert_kind" in
+    offline)
+      marker="🔴"
+      kind_cn="掉线告警"
+      ;;
+    jitter)
+      marker="🟡"
+      kind_cn="波动告警"
+      ;;
+    recovery)
+      marker="🟢"
+      kind_cn="恢复通知"
+      ;;
+    *)
+      marker="🔵"
+      kind_cn="状态通知"
+      ;;
+  esac
+
+  if (( latency_ms < 0 )); then
+    latency_show="不可达"
+  else
+    latency_show="${latency_ms}ms"
+  fi
+  if (( jitter_ms < 0 )); then
+    jitter_show="N/A"
+  else
+    jitter_show="${jitter_ms}ms"
+  fi
+
+  title="${marker} Beszel-ZT ${kind_cn} ${system_name}"
+  msg="$(cat <<EOF
+### ${marker} Beszel 网络通知
+- **类型**：${kind_cn}
+- **设备**：\`${system_name}\`
+- **主机**：\`${host}\`
+- **网络**：\`192/193-${network_label}\`
+- **延迟**：\`${latency_show}\`
+- **抖动**：\`${jitter_show}\`
+- **连续计数**：\`${streak}\`
+- **时间**：\`$(timestamp)\`
+EOF
+)"
 
   if [[ -n "$ALERT_SYSTEM_FILTER_REGEX" ]] && [[ ! "$system_name" =~ $ALERT_SYSTEM_FILTER_REGEX ]]; then
     return 0
@@ -185,7 +237,7 @@ emit_alert() {
     return 0
   fi
 
-  send_dingtalk "$msg" || true
+  send_dingtalk "$title" "$msg" || true
 }
 
 probe_ms() {
