@@ -13,6 +13,11 @@
 - [x] 修复告警边界：持续掉线/持续高抖动可按冷却时间重复提醒
 - [x] 完成 webhook 自检（HTTP 200 + `errcode=0`）
 - [x] 完成持续掉线复测（`BE6500` 定向触发，日志 `dingtalk send ok`）
+- [x] 完成本地提交：`a79f9602`
+- [x] 完成 MCP 钉钉任务通知发送
+
+### 阻塞
+- `git push` 返回 `403`（`Permission to henrygd/beszel.git denied to l2ktech`），当前环境无远端写权限。
 
 ### 问题
 - **问题**：用户希望对每台设备增加双网络波动与掉线告警，但现有只采集基础延迟。
