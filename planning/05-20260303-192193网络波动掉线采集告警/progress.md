@@ -67,3 +67,6 @@
 
 - **问题**：`win-cli` SSH MCP 接口全部报 response body 解码错误，无法直接做 SSH MCP 连通性测试。
 - **解决**：改用本机 SSH + 远端节点交叉验证完成诊断；`th16` 仍需可用凭据后补最终远端命令。
+
+- **问题**：`git push` 返回 `403`（`Permission to henrygd/beszel.git denied to l2ktech`）。
+- **解决**：已完成本地提交 `65640646`，待切换有写权限的 remote 凭据后补推送。
