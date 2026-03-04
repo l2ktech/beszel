@@ -38,7 +38,11 @@
 - [x] 本地验证通过：`bash -n`、脚本执行、DB 查询、`internal/site` 构建
 - [x] 完成部署：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .` 并 `docker compose up -d beszel`
 - [x] 可用性验证：`/api/health` 返回 200
+- [x] 完成本地提交：`3981dc8f`
 
 ### 问题
 - **问题**：前端构建初次失败（`lingui: command not found`）。
 - **解决**：执行 `cd internal/site && npm install` 后，`npm run -s build` 通过。
+
+- **问题**：`git push` 返回 `403`（`Permission to henrygd/beszel.git denied to l2ktech`）。
+- **解决**：已保留本地提交并发送钉钉通知，等待切换有权限的 remote 凭据后补推送。
