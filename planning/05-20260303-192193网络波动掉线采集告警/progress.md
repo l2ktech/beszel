@@ -93,3 +93,18 @@
 
 - **问题**：`git push` 返回 `403`（`Permission to henrygd/beszel.git denied to l2ktech`）。
 - **解决**：已保留本地提交 `2b630395`，待切换有写权限凭据后补推送。
+
+## 会话 2026-03-05（历史页仅延迟可见/其余图表数据准备中）
+### 完成
+- [x] 复用本任务 planning 并补充增量查重记录（相似度 98%）
+- [x] 定位现象：`zt1m` 持续增长，但 `system_stats` 的原生类型（特别是 `1m`）几乎停更
+- [x] 实测确认：重启前只有少量系统有 `1m` 新样本，导致多数图表显示“数据准备中”
+- [x] 后端修复：`internal/hub/systems/system.go` 为 SSH 采集增加 `decode/wait` 超时保护，避免 goroutine 卡死
+- [x] 本地验证：`go build ./internal/cmd/hub` 通过
+- [x] 部署更新：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .` + `docker compose up -d beszel`
+- [x] 健康检查：`curl http://127.0.0.1:38005/api/health` 返回 `200`
+- [x] 修复验证：重启后 12 台 `up` 系统均恢复 `1m` 写入（每台都有最近样本），`zt1m` 继续稳定增长
+
+### 问题
+- **问题**：Hub 原生采集在部分 SSH 系统上出现“状态不降级但采集线程卡住”，前端表现为除延迟外都“数据准备中”。
+- **解决**：增加 SSH 解码与会话等待超时，避免无限阻塞；重建 Hub 后原生 `1m` 采样恢复。

@@ -31,6 +31,32 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+func decodeWithTimeout(timeout time.Duration, decode func() error) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- decode()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("decode timeout after %s", timeout)
+	}
+}
+
+func waitWithTimeout(session *ssh.Session, timeout time.Duration) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Wait()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("session wait timeout after %s", timeout)
+	}
+}
+
 type System struct {
 	Id             string                  `db:"id"`
 	Host           string                  `db:"host"`
@@ -538,10 +564,13 @@ func (sys *System) fetchDataViaSSH(options common.DataRequestOptions) (*system.C
 			_ = stdin.Close()
 
 			var resp common.AgentResponse
-			if decErr := cbor.NewDecoder(stdout).Decode(&resp); decErr == nil && resp.SystemData != nil {
+			decErr := decodeWithTimeout(6*time.Second, func() error {
+				return cbor.NewDecoder(stdout).Decode(&resp)
+			})
+			if decErr == nil && resp.SystemData != nil {
 				*sys.data = *resp.SystemData
-				if err := session.Wait(); err != nil {
-					return false, err
+				if err := waitWithTimeout(session, 6*time.Second); err != nil {
+					return true, err
 				}
 				return false, nil
 			}
@@ -549,17 +578,21 @@ func (sys *System) fetchDataViaSSH(options common.DataRequestOptions) (*system.C
 
 		var decodeErr error
 		if sys.agentVersion.GTE(beszel.MinVersionCbor) {
-			decodeErr = cbor.NewDecoder(stdout).Decode(sys.data)
+			decodeErr = decodeWithTimeout(6*time.Second, func() error {
+				return cbor.NewDecoder(stdout).Decode(sys.data)
+			})
 		} else {
-			decodeErr = json.NewDecoder(stdout).Decode(sys.data)
+			decodeErr = decodeWithTimeout(6*time.Second, func() error {
+				return json.NewDecoder(stdout).Decode(sys.data)
+			})
 		}
 
 		if decodeErr != nil {
 			return true, decodeErr
 		}
 
-		if err := session.Wait(); err != nil {
-			return false, err
+		if err := waitWithTimeout(session, 6*time.Second); err != nil {
+			return true, err
 		}
 
 		return false, nil
