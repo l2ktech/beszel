@@ -104,6 +104,7 @@
 - [x] 部署更新：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .` + `docker compose up -d beszel`
 - [x] 健康检查：`curl http://127.0.0.1:38005/api/health` 返回 `200`
 - [x] 修复验证：重启后 12 台 `up` 系统均恢复 `1m` 写入（每台都有最近样本），`zt1m` 继续稳定增长
+- [x] 完成本地提交：`259a24b4`
 
 ### 问题
 - **问题**：Hub 原生采集在部分 SSH 系统上出现“状态不降级但采集线程卡住”，前端表现为除延迟外都“数据准备中”。
