@@ -82,7 +82,11 @@
 - [x] 部署更新：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .` + `docker compose up -d beszel`
 - [x] 可用性验证：`curl http://127.0.0.1:38005/api/health` 返回 `200`
 - [x] 数据持续更新验证通过：65 秒复测 `zt1m` 从 `966` 增长到 `980`，最新时间前进到 `2026-03-04 09:50:17Z`
+- [x] 完成本地提交：`2b630395`
 
 ### 问题
 - **问题**：`npm run -s check` 在项目现状下存在大量历史 lint/format 诊断，无法作为本次改动门禁。
 - **解决**：使用 `npx tsc --noEmit` + `npm run -s build` 验证本次改动可编译、可打包，并单独核验 `zt1m` 数据实时增长。
+
+- **问题**：`git push` 返回 `403`（`Permission to henrygd/beszel.git denied to l2ktech`）。
+- **解决**：已保留本地提交 `2b630395`，待切换有写权限凭据后补推送。
