@@ -37,7 +37,9 @@ cleanup() {
 }
 
 is_true() {
-  case "${1,,}" in
+  local value
+  value="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
     1|true|yes|on) return 0 ;;
     *) return 1 ;;
   esac
@@ -219,7 +221,7 @@ emit_alert() {
 - **类型**：${kind_cn}
 - **设备**：\`${system_name}\`
 - **主机**：\`${host}\`
-- **网络**：\`192/193-${network_label}\`
+- **网络**：\`${network_label}\`
 - **延迟**：\`${latency_show}\`
 - **抖动**：\`${jitter_show}\`
 - **连续计数**：\`${streak}\`
@@ -261,19 +263,18 @@ probe_ms() {
   echo "-1"
 }
 
-derive_pair() {
+derive_target_193() {
   local host="$1"
   local octet
 
   if [[ "$host" =~ ^192\.168\.192\.([0-9]{1,3})$ ]]; then
     octet="${BASH_REMATCH[1]}"
-    echo "$host 192.168.193.${octet}"
+    echo "192.168.193.${octet}"
     return 0
   fi
 
   if [[ "$host" =~ ^192\.168\.193\.([0-9]{1,3})$ ]]; then
-    octet="${BASH_REMATCH[1]}"
-    echo "192.168.192.${octet} $host"
+    echo "$host"
     return 0
   fi
 
@@ -293,7 +294,6 @@ main() {
   local host
   local pair
   local pair_valid
-  local ip192
   local ip193
   local prev_z192
   local prev_z193
@@ -329,6 +329,8 @@ main() {
   local z193_last_jitter_alert
   local z192_last_recovery_alert
   local z193_last_recovery_alert
+  local z193_latency_chart
+  local z193_jitter_chart
   local now_ts
   local id_escaped
   local sql
@@ -386,46 +388,41 @@ main() {
     prev_last_recovery_alert_193="$(to_int "$prev_last_recovery_alert_193")"
     prev_status_192="${prev_status_192:-}"
     prev_status_193="${prev_status_193:-}"
-    pair="$(derive_pair "$host")"
+    pair="$(derive_target_193 "$host")"
     pair_valid=0
-    ip192=""
     ip193=""
 
     if [[ -n "$pair" ]]; then
       pair_valid=1
-      ip192="${pair%% *}"
-      ip193="${pair##* }"
+      ip193="$pair"
     fi
 
-    # For non-192/193 hosts (e.g. domain), keep deterministic placeholder -1.
-    z192="$(probe_ms "$ip192")"
+    # 192 latency probing is disabled by request; only probe 193.
+    z192="-1"
     z193="$(probe_ms "$ip193")"
 
     if (( pair_valid == 1 )); then
-      z192_jitter="$(calc_jitter_ms "$z192" "$prev_z192")"
+      z192_jitter="-1"
       z193_jitter="$(calc_jitter_ms "$z193" "$prev_z193")"
 
-      if (( z192 >= 0 )); then z192_status="up"; else z192_status="down"; fi
+      z192_status="disabled"
       if (( z193 >= 0 )); then z193_status="up"; else z193_status="down"; fi
 
-      if [[ "$z192_status" == "down" ]]; then z192_down_streak=$((prev_down_streak_192 + 1)); else z192_down_streak=0; fi
+      z192_down_streak=0
       if [[ "$z193_status" == "down" ]]; then z193_down_streak=$((prev_down_streak_193 + 1)); else z193_down_streak=0; fi
 
-      if (( z192_jitter >= ALERT_JITTER_WARN_MS )); then z192_jitter_streak=$((prev_jitter_streak_192 + 1)); else z192_jitter_streak=0; fi
+      z192_jitter_streak=0
       if (( z193_jitter >= ALERT_JITTER_WARN_MS )); then z193_jitter_streak=$((prev_jitter_streak_193 + 1)); else z193_jitter_streak=0; fi
 
       z192_flap_count="$prev_flap_count_192"
       z193_flap_count="$prev_flap_count_193"
-      if [[ "$prev_status_192" =~ ^(up|down)$ ]] && [[ "$prev_status_192" != "$z192_status" ]]; then
-        z192_flap_count=$((prev_flap_count_192 + 1))
-      fi
       if [[ "$prev_status_193" =~ ^(up|down)$ ]] && [[ "$prev_status_193" != "$z193_status" ]]; then
         z193_flap_count=$((prev_flap_count_193 + 1))
       fi
     else
       z192_jitter="-1"
       z193_jitter="-1"
-      z192_status="na"
+      z192_status="disabled"
       z193_status="na"
       z192_down_streak=0
       z193_down_streak=0
@@ -443,12 +440,6 @@ main() {
     z193_last_recovery_alert="$prev_last_recovery_alert_193"
 
     if (( pair_valid == 1 )); then
-      if [[ "$z192_status" == "down" ]] && (( z192_down_streak >= ALERT_OFFLINE_STREAK )); then
-        if (( prev_down_streak_192 < ALERT_OFFLINE_STREAK )) || (( prev_last_offline_alert_192 <= 0 )) || should_alert_with_cooldown "$now_ts" "$prev_last_offline_alert_192"; then
-          emit_alert "offline" "$name" "$host" "192" "$z192" "$z192_jitter" "$z192_down_streak"
-          z192_last_offline_alert="$now_ts"
-        fi
-      fi
       if [[ "$z193_status" == "down" ]] && (( z193_down_streak >= ALERT_OFFLINE_STREAK )); then
         if (( prev_down_streak_193 < ALERT_OFFLINE_STREAK )) || (( prev_last_offline_alert_193 <= 0 )) || should_alert_with_cooldown "$now_ts" "$prev_last_offline_alert_193"; then
           emit_alert "offline" "$name" "$host" "193" "$z193" "$z193_jitter" "$z193_down_streak"
@@ -456,12 +447,6 @@ main() {
         fi
       fi
 
-      if [[ "$z192_status" == "up" ]] && [[ "$prev_status_192" == "down" ]] && (( prev_down_streak_192 >= ALERT_OFFLINE_STREAK )); then
-        if should_alert_with_cooldown "$now_ts" "$prev_last_recovery_alert_192"; then
-          emit_alert "recovery" "$name" "$host" "192" "$z192" "$z192_jitter" "$prev_down_streak_192"
-          z192_last_recovery_alert="$now_ts"
-        fi
-      fi
       if [[ "$z193_status" == "up" ]] && [[ "$prev_status_193" == "down" ]] && (( prev_down_streak_193 >= ALERT_OFFLINE_STREAK )); then
         if should_alert_with_cooldown "$now_ts" "$prev_last_recovery_alert_193"; then
           emit_alert "recovery" "$name" "$host" "193" "$z193" "$z193_jitter" "$prev_down_streak_193"
@@ -469,18 +454,24 @@ main() {
         fi
       fi
 
-      if [[ "$z192_status" == "up" ]] && (( z192_jitter >= ALERT_JITTER_WARN_MS )) && (( z192_jitter_streak >= ALERT_JITTER_STREAK )); then
-        if (( prev_jitter_streak_192 < ALERT_JITTER_STREAK )) || (( prev_last_jitter_alert_192 <= 0 )) || should_alert_with_cooldown "$now_ts" "$prev_last_jitter_alert_192"; then
-          emit_alert "jitter" "$name" "$host" "192" "$z192" "$z192_jitter" "$z192_jitter_streak"
-          z192_last_jitter_alert="$now_ts"
-        fi
-      fi
       if [[ "$z193_status" == "up" ]] && (( z193_jitter >= ALERT_JITTER_WARN_MS )) && (( z193_jitter_streak >= ALERT_JITTER_STREAK )); then
         if (( prev_jitter_streak_193 < ALERT_JITTER_STREAK )) || (( prev_last_jitter_alert_193 <= 0 )) || should_alert_with_cooldown "$now_ts" "$prev_last_jitter_alert_193"; then
           emit_alert "jitter" "$name" "$host" "193" "$z193" "$z193_jitter" "$z193_jitter_streak"
           z193_last_jitter_alert="$now_ts"
         fi
       fi
+    fi
+
+    if (( z193 >= 0 )); then
+      z193_latency_chart="$z193"
+    else
+      z193_latency_chart="NULL"
+    fi
+
+    if (( z193_jitter >= 0 )); then
+      z193_jitter_chart="$z193_jitter"
+    else
+      z193_jitter_chart="NULL"
     fi
 
     id_escaped="${id//\'/\'\'}"
@@ -495,8 +486,9 @@ main() {
     sql="${sql}'$.z192_last_jitter_alert_ts',${z192_last_jitter_alert},'$.z193_last_jitter_alert_ts',${z193_last_jitter_alert},"
     sql="${sql}'$.z192_last_recovery_alert_ts',${z192_last_recovery_alert},'$.z193_last_recovery_alert_ts',${z193_last_recovery_alert},"
     sql="${sql}'$.zt_probe_ts',${now_ts}) WHERE id='${id_escaped}';"
+    sql="${sql}INSERT INTO system_stats (id, system, stats, type, created, updated) VALUES ('r'||lower(hex(randomblob(7))), '${id_escaped}', json_object('z193l', ${z193_latency_chart}, 'z193j', ${z193_jitter_chart}, 'z193s', '${z193_status}'), 'zt1m', strftime('%Y-%m-%d %H:%M:%fZ','now'), strftime('%Y-%m-%d %H:%M:%fZ','now'));"
 
-    log "system=${name} host=${host} z192=${z192} z193=${z193} z192_jitter=${z192_jitter} z193_jitter=${z193_jitter} z192_status=${z192_status} z193_status=${z193_status} z192_down=${z192_down_streak} z193_down=${z193_down_streak} z192_js=${z192_jitter_streak} z193_js=${z193_jitter_streak}"
+    log "system=${name} host=${host} z193=${z193} z193_jitter=${z193_jitter} z193_status=${z193_status} z193_down=${z193_down_streak} z193_js=${z193_jitter_streak}"
   done < <(sqlite3 -readonly -separator $'\t' "$DB_PATH" -cmd ".timeout 5000" "SELECT id,name,host,COALESCE(CAST(json_extract(info,'$.z192') AS INTEGER),-1),COALESCE(CAST(json_extract(info,'$.z193') AS INTEGER),-1),COALESCE(CAST(json_extract(info,'$.z192_down_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_down_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_jitter_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_jitter_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_flap_count') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_flap_count') AS INTEGER),0),COALESCE(json_extract(info,'$.z192_status'),''),COALESCE(json_extract(info,'$.z193_status'),''),COALESCE(CAST(json_extract(info,'$.z192_last_offline_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_last_offline_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_last_jitter_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_last_jitter_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_last_recovery_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_last_recovery_alert_ts') AS INTEGER),0) FROM systems ORDER BY name;")
 
   sql="${sql}COMMIT;"

@@ -838,10 +838,18 @@ msgstr "Inaktív"
 msgid "Invalid email address."
 msgstr "Érvénytelen e-mail cím."
 
+#: src/components/routes/system.tsx
+msgid "Jitter"
+msgstr ""
+
 #: src/components/lang-toggle.tsx
 #: src/components/routes/settings/general.tsx
 msgid "Language"
 msgstr "Nyelv"
+
+#: src/components/routes/system.tsx
+msgid "Latency"
+msgstr ""
 
 #: src/components/systems-table/systems-table.tsx
 msgid "Layout"
@@ -1253,6 +1261,10 @@ msgstr "Gyökér"
 #: src/components/routes/settings/tokens-fingerprints.tsx
 msgid "Rotate token"
 msgstr "Tokenváltás"
+
+#: src/components/routes/system.tsx
+msgid "Round-trip latency and jitter for 193 network probes"
+msgstr ""
 
 #: src/components/routes/settings/alerts-history-data-table.tsx
 msgid "Rows per page"
@@ -1745,3 +1757,7 @@ msgstr "Igen"
 #: src/components/routes/settings/layout.tsx
 msgid "Your user settings have been updated."
 msgstr "A felhasználói beállítások frissítésre kerültek."
+
+#: src/components/routes/system.tsx
+msgid "ZT 193 Latency"
+msgstr ""

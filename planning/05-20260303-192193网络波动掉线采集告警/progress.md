@@ -25,3 +25,20 @@
 
 - **问题**：首次实现出现 SQL 组装错误（空字段导致 `json_set(..., , ...)`）。
 - **解决**：增加 `to_int` 归一化函数，对历史字段统一强制数值化，已修复。
+
+## 会话 2026-03-04
+### 完成
+- [x] 复用本任务 planning（相似度 95%）并补全查重记录
+- [x] 完成项目健康核验：容器与 `/api/health` 正常
+- [x] 定位采集停更根因：`${1,,}` 在 macOS Bash 3.2 下不兼容导致脚本中断
+- [x] 修复兼容问题：`is_true` 改为 `tr` 小写转换
+- [x] 实现仅 193 探测：移除 192 探测与 192 告警触发，`z192_status=disabled`
+- [x] 增加图表化时序采集：写入 `system_stats.type='zt1m'`（`z193l/z193j/z193s`）
+- [x] 前端新增 `ZT 193 Latency` 曲线图，读取 `zt1m` 数据
+- [x] 本地验证通过：`bash -n`、脚本执行、DB 查询、`internal/site` 构建
+- [x] 完成部署：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .` 并 `docker compose up -d beszel`
+- [x] 可用性验证：`/api/health` 返回 200
+
+### 问题
+- **问题**：前端构建初次失败（`lingui: command not found`）。
+- **解决**：执行 `cd internal/site && npm install` 后，`npm run -s build` 通过。

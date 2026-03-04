@@ -159,6 +159,12 @@ export interface SystemStats {
 	bat?: [number, BatteryState]
 	/** network interfaces [upload bytes, download bytes, total upload bytes, total download bytes] */
 	ni?: Record<string, [number, number, number, number]>
+	/** ZeroTier 193 latency (ms), injected by zt latency sync */
+	z193l?: number | null
+	/** ZeroTier 193 jitter (ms), injected by zt latency sync */
+	z193j?: number | null
+	/** ZeroTier 193 status (up/down/na), injected by zt latency sync */
+	z193s?: string
 }
 
 export interface GPUData {

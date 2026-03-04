@@ -128,15 +128,17 @@ function addEmptyValues<T extends { created: string | number | null }>(
 async function getStats<T extends SystemStatsRecord | ContainerStatsRecord>(
 	collection: string,
 	system: SystemRecord,
-	chartTime: ChartTimes
+	chartTime: ChartTimes,
+	typeOverride?: string
 ): Promise<T[]> {
-	const cachedStats = cache.get(`${system.id}_${chartTime}_${collection}`) as T[] | undefined
+	const recordType = typeOverride ?? chartTimeData[chartTime].type
+	const cachedStats = cache.get(`${system.id}_${chartTime}_${collection}_${recordType}`) as T[] | undefined
 	const lastCached = cachedStats?.at(-1)?.created as number
 	return await pb.collection<T>(collection).getFullList({
 		filter: pb.filter("system={:id} && created > {:created} && type={:type}", {
 			id: system.id,
 			created: getPbTimestamp(chartTime, lastCached ? new Date(lastCached + 1000) : undefined),
-			type: chartTimeData[chartTime].type,
+			type: recordType,
 		}),
 		fields: "created,stats",
 		sort: "created",
@@ -159,6 +161,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 	const [grid, setGrid] = useBrowserStorage("grid", true)
 	const [system, setSystem] = useState({} as SystemRecord)
 	const [systemStats, setSystemStats] = useState([] as SystemStatsRecord[])
+	const [z193Stats, setZ193Stats] = useState([] as SystemStatsRecord[])
 	const [containerData, setContainerData] = useState([] as ChartData["containerData"])
 	const temperatureChartRef = useRef<HTMLDivElement>(null)
 	const persistChartTime = useRef(false)
@@ -176,6 +179,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 			}
 			persistChartTime.current = false
 			setSystemStats([])
+			setZ193Stats([])
 			setContainerData([])
 			setDetails({} as SystemDetailsRecord)
 			$containerFilter.set("")
@@ -273,6 +277,13 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 			agentVersion: parseSemVer(system?.info?.v),
 		}
 	}, [systemStats, containerData, direction])
+	const z193ChartData: ChartData = useMemo(
+		() => ({
+			...chartData,
+			systemStats: z193Stats,
+		}),
+		[chartData, z193Stats]
+	)
 
 	// Share chart config computation for all container charts
 	const containerChartConfigs = useContainerChartConfigs(containerData)
@@ -313,7 +324,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 
 			const { expectedInterval } = chartTimeData[chartTime]
 			// make new system stats
-			const ss_cache_key = `${system.id}_${chartTime}_system_stats`
+			const ss_cache_key = `${system.id}_${chartTime}_system_stats_${chartTimeData[chartTime].type}`
 			let systemData = (cache.get(ss_cache_key) || []) as SystemStatsRecord[]
 			if (systemStats.status === "fulfilled" && systemStats.value.length) {
 				systemData = systemData.concat(addEmptyValues(systemData, systemStats.value, expectedInterval))
@@ -324,7 +335,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 			}
 			setSystemStats(systemData)
 			// make new container stats
-			const cs_cache_key = `${system.id}_${chartTime}_container_stats`
+			const cs_cache_key = `${system.id}_${chartTime}_container_stats_${chartTimeData[chartTime].type}`
 			let containerData = (cache.get(cs_cache_key) || []) as ContainerStatsRecord[]
 			if (containerStats.status === "fulfilled" && containerStats.value.length) {
 				containerData = containerData.concat(addEmptyValues(containerData, containerStats.value, expectedInterval))
@@ -336,6 +347,26 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 			setContainerData(makeContainerData(containerData))
 		})
 	}, [system, chartTime])
+
+	// get zt 193 latency history (custom system_stats type)
+	useEffect(() => {
+		if (!system.id || !chartTime) {
+			return
+		}
+		const cacheKey = `${system.id}_${chartTime}_system_stats_zt1m`
+		const expectedInterval = 60_000
+		let latencyData = (cache.get(cacheKey) || []) as SystemStatsRecord[]
+		getStats<SystemStatsRecord>("system_stats", system, chartTime, "zt1m").then((records) => {
+			if (records.length) {
+				latencyData = latencyData.concat(addEmptyValues(latencyData, records, expectedInterval))
+				if (latencyData.length > 240) {
+					latencyData = latencyData.slice(-180)
+				}
+				cache.set(cacheKey, latencyData)
+			}
+			setZ193Stats(latencyData)
+		})
+	}, [system.id, chartTime])
 
 	/** Space for tooltip if more than 10 sensors and no containers table */
 	useEffect(() => {
@@ -401,6 +432,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 	const containerFilterBar = containerData.length ? <FilterBar /> : null
 
 	const dataEmpty = !chartLoading && chartData.systemStats.length === 0
+	const hasZ193LatencyData = z193Stats.length > 0
 	const lastGpus = systemStats.at(-1)?.stats?.g
 
 	let hasGpuData = false
@@ -623,6 +655,35 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 							showTotal={true}
 						/>
 					</ChartCard>
+
+					{hasZ193LatencyData && (
+						<ChartCard
+							empty={dataEmpty}
+							grid={grid}
+							title={t`ZT 193 Latency`}
+							description={t`Round-trip latency and jitter for 193 network probes`}
+						>
+							<LineChartDefault
+								chartData={z193ChartData}
+								dataPoints={[
+									{
+										label: t`Latency`,
+										dataKey: ({ stats }) => stats?.z193l ?? null,
+										color: 1,
+										opacity: 0.35,
+									},
+									{
+										label: t`Jitter`,
+										dataKey: ({ stats }) => stats?.z193j ?? null,
+										color: 3,
+										opacity: 0.35,
+									},
+								]}
+								tickFormatter={(val) => `${toFixedFloat(val, 0)} ms`}
+								contentFormatter={({ value }) => `${decimalString(value, 0)} ms`}
+							/>
+						</ChartCard>
+					)}
 
 					{containerFilterBar && containerData.length > 0 && (
 						<ChartCard
