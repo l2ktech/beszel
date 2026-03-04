@@ -99,3 +99,20 @@
 - **发现**：`win-cli` SSH MCP 当前不可用（response decode error），`192.168.193.16:35622` 仅支持 `ssh-rsa` 且现有密钥鉴权失败，无法直接登录 th16 执行远端命令。
 - **来源**：MCP 调用返回与 SSH 实测。
 - **影响**：th16 侧需用户在本机补执行 2-3 条命令完成最终定位（`curl`/`nc`/`ip route`）。
+
+## 2026-03-04 首页/记录页193延迟缺失定位与修复
+- **发现**：首页缺失 `193` 延迟的直接原因是 `internal/site/src/components/systems-table/systems-table-columns.tsx` 未定义 `z193` 列，导致 Home 表格永远不渲染该指标。
+- **来源**：源码检索与列定义核查（`home.tsx` -> `SystemsTable` -> `systems-table-columns.tsx`）。
+- **影响**：用户在首页无法快速看到每台机器 `193` 延迟状态，只能进入系统详情页看曲线。
+
+- **发现**：记录页（Alert History）仅订阅 `alerts_history` 集合，不包含 `system_stats.type='zt1m'`，因此看不到 `193` 延迟采样记录。
+- **来源**：`internal/site/src/components/routes/settings/alerts-history-data-table.tsx`。
+- **影响**：用户无法在“记录页”查看按时间落库的 193 延迟明细，误判为未采集。
+
+- **发现**：已完成前端修复：首页新增 `ZT 193 Latency` 列；记录页新增 `ZT 193 Latency` 表（`system_stats.type='zt1m'`，含 `latency/jitter/state/created`）并接入实时订阅。
+- **来源**：`systems-table-columns.tsx`、`alerts-history-data-table.tsx`、`types.d.ts`。
+- **影响**：193 延迟在首页与记录页均可见，且记录页会随新采样自动刷新。
+
+- **发现**：数据链路仍在持续更新，65 秒复测中 `zt1m` 记录从 `966` 增长到 `980`，`max(created)` 从 `2026-03-04 09:49:12.644Z` 前进到 `2026-03-04 09:50:17.529Z`。
+- **来源**：`sqlite3 beszel_data/data.db` 前后对比查询。
+- **影响**：可排除“采集停更”，当前问题属于前端展示缺口，已修复。

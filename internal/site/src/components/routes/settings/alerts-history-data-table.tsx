@@ -32,6 +32,7 @@ import {
 	AlertDialogTitle,
 	AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -42,7 +43,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { alertInfo } from "@/lib/alerts"
 import { pb } from "@/lib/api"
 import { cn, formatDuration, formatShortDate, useBrowserStorage } from "@/lib/utils"
-import type { AlertsHistoryRecord } from "@/types"
+import type { AlertsHistoryRecord, ZtLatencyRecord } from "@/types"
 import { alertsHistoryColumns } from "../../alerts-history-columns"
 
 const SectionIntro = memo(() => {
@@ -58,8 +59,22 @@ const SectionIntro = memo(() => {
 	)
 })
 
+const ZtSectionIntro = memo(() => {
+	return (
+		<div className="mt-8">
+			<h3 className="text-xl font-medium mb-2">
+				<Trans>ZT 193 Latency</Trans>
+			</h3>
+			<p className="text-sm text-muted-foreground leading-relaxed">
+				<Trans>Round-trip latency and jitter for 193 network probes</Trans>
+			</p>
+		</div>
+	)
+})
+
 export default function AlertsHistoryDataTable() {
 	const [data, setData] = useState<AlertsHistoryRecord[]>([])
+	const [latencyData, setLatencyData] = useState<ZtLatencyRecord[]>([])
 	const [sorting, setSorting] = useState<SortingState>([])
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
 	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
@@ -67,7 +82,7 @@ export default function AlertsHistoryDataTable() {
 	const [globalFilter, setGlobalFilter] = useState("")
 	const { toast } = useToast()
 	const [deleteOpen, setDeleteDialogOpen] = useState(false)
-	
+
 	// Store pagination preference in local storage
 	const [pagination, setPagination] = useBrowserStorage<PaginationState>("ah-pagination", {
 		pageIndex: 0,
@@ -107,6 +122,51 @@ export default function AlertsHistoryDataTable() {
 			)
 		})()
 		// Unsubscribe on unmount
+		return () => unsubscribe?.()
+	}, [])
+
+	useEffect(() => {
+		let unsubscribe: (() => void) | undefined
+		const pbOptions = {
+			expand: "system",
+			fields: "id,system,type,stats,created,expand.system.name",
+		}
+		pb.collection<ZtLatencyRecord>("system_stats")
+			.getList(0, 200, {
+				...pbOptions,
+				filter: "type='zt1m'",
+				sort: "-created",
+			})
+			.then(({ items }) => setLatencyData(items))
+
+		;(async () => {
+			unsubscribe = await pb.collection("system_stats").subscribe(
+				"*",
+				(e) => {
+					const record = e.record as ZtLatencyRecord & { type?: string }
+					if (record.type !== "zt1m") {
+						return
+					}
+					if (e.action === "create") {
+						setLatencyData((current) => [record, ...current].slice(0, 200))
+						return
+					}
+					if (e.action === "update") {
+						setLatencyData((current) =>
+							current.map((item) => (item.id === record.id ? record : item)).sort((a, b) => {
+								return new Date(b.created).getTime() - new Date(a.created).getTime()
+							})
+						)
+						return
+					}
+					if (e.action === "delete") {
+						setLatencyData((current) => current.filter((item) => item.id !== record.id))
+					}
+				},
+				pbOptions
+			)
+		})()
+
 		return () => unsubscribe?.()
 	}, [])
 
@@ -223,6 +283,8 @@ export default function AlertsHistoryDataTable() {
 		a.click()
 		URL.revokeObjectURL(url)
 	}
+
+	const latencyRows = latencyData.slice(0, 100)
 
 	return (
 		<div className="@container w-full">
@@ -389,6 +451,72 @@ export default function AlertsHistoryDataTable() {
 						</Button>
 					</div>
 				</div>
+			</div>
+
+			<ZtSectionIntro />
+			<div className="rounded-md border overflow-x-auto whitespace-nowrap mt-4">
+				<Table>
+					<TableHeader>
+						<TableRow className="border-border/50">
+							<TableHead>
+								<Trans>System</Trans>
+							</TableHead>
+							<TableHead>
+								<Trans>Latency</Trans>
+							</TableHead>
+							<TableHead>
+								<Trans>Jitter</Trans>
+							</TableHead>
+							<TableHead>
+								<Trans comment="Context: alert state (active or resolved)">State</Trans>
+							</TableHead>
+							<TableHead>
+								<Trans comment="Context: date created">Created</Trans>
+							</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{latencyRows.length ? (
+							latencyRows.map((record) => {
+								const latency = Number(record.stats?.z193l)
+								const jitter = Number(record.stats?.z193j)
+								const status = record.stats?.z193s ?? "na"
+								return (
+									<TableRow key={record.id}>
+										<TableCell className="py-3">{record.expand?.system?.name || record.system}</TableCell>
+										<TableCell className="py-3 tabular-nums">
+											{Number.isFinite(latency) && latency >= 0 ? `${latency} ms` : "--"}
+										</TableCell>
+										<TableCell className="py-3 tabular-nums">
+											{Number.isFinite(jitter) && jitter >= 0 ? `${jitter} ms` : "--"}
+										</TableCell>
+										<TableCell className="py-3">
+											<Badge
+												className={cn(
+													"capitalize pointer-events-none",
+													status === "up"
+														? "bg-green-100 text-green-800 border-green-200 dark:opacity-80"
+														: status === "down"
+															? "bg-red-100 text-red-800 border-red-200 dark:opacity-80"
+															: "bg-slate-100 text-slate-800 border-slate-200 dark:opacity-80"
+												)}
+											>
+												{status === "up" ? <Trans>Up</Trans> : status === "down" ? <Trans>Down</Trans> : "--"}
+											</Badge>
+										</TableCell>
+										<TableCell className="py-3 tabular-nums tracking-tight">{formatShortDate(record.created)}</TableCell>
+									</TableRow>
+								)
+							})
+						) : (
+							<TableRow>
+								<TableCell colSpan={5} className="h-24 text-center">
+									<Trans>No results.</Trans>
+								</TableCell>
+							</TableRow>
+						)}
+					</TableBody>
+				</Table>
 			</div>
 		</div>
 	)

@@ -267,6 +267,59 @@ export function SystemsTableColumns(viewMode: "table" | "grid"): ColumnDef<Syste
 			},
 		},
 		{
+			accessorFn: ({ info }) => {
+				const latency = Number(info.z193)
+				const status = info.z193_status
+				if (!Number.isFinite(latency) || latency < 0 || status === "down" || status === "na" || status === "disabled") {
+					return undefined
+				}
+				return latency
+			},
+			id: "z193",
+			name: () => t`ZT 193 Latency`,
+			size: 90,
+			Icon: WifiIcon,
+			header: sortableHeader,
+			cell(info) {
+				const system = info.row.original
+				const latency = Number(system.info.z193)
+				const jitter = Number(system.info.z193_jitter)
+				const status = system.info.z193_status
+
+				if (system.status === SystemStatus.Paused || status === "disabled") {
+					return null
+				}
+				if (status === "down" || latency < 0) {
+					return <span className="tabular-nums text-red-500 ps-0.5">{t`Down`}</span>
+				}
+				if (status === "na") {
+					return <span className="tabular-nums text-muted-foreground ps-0.5">--</span>
+				}
+				if (!Number.isFinite(latency)) {
+					return null
+				}
+
+				const latencyTone =
+					latency <= 20
+						? "text-green-600 dark:text-green-400"
+						: latency <= 80
+							? "text-yellow-600 dark:text-yellow-400"
+							: "text-red-500"
+				const hasJitter = Number.isFinite(jitter) && jitter >= 0
+
+				return (
+					<Link
+						tabIndex={-1}
+						href={getPagePath($router, "system", { id: system.id })}
+						className="tabular-nums whitespace-nowrap relative z-10"
+					>
+						<span className={latencyTone}>{decimalString(latency, 0)}ms</span>
+						{hasJitter && <span className="text-muted-foreground"> / {decimalString(jitter, 0)}j</span>}
+					</Link>
+				)
+			},
+		},
+		{
 			accessorFn: ({ info }) => info.dt,
 			id: "temp",
 			name: () => t({ message: "Temp", comment: "Temperature label in systems table" }),

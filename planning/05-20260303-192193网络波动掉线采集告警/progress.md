@@ -70,3 +70,19 @@
 
 - **问题**：`git push` 返回 `403`（`Permission to henrygd/beszel.git denied to l2ktech`）。
 - **解决**：已完成本地提交 `65640646`，待切换有写权限的 remote 凭据后补推送。
+
+## 会话 2026-03-04（首页/记录页193延迟展示修复）
+### 完成
+- [x] 复用本任务 planning 并补充增量查重记录（相似度 97%）
+- [x] 定位首页缺失根因：`systems-table-columns.tsx` 未定义 `z193` 字段列
+- [x] 首页新增 `ZT 193 Latency` 列，展示 `info.z193 / info.z193_jitter / info.z193_status`
+- [x] 记录页（Alert History）新增 `ZT 193 Latency` 采样记录表，数据源 `system_stats.type='zt1m'`
+- [x] 为记录页 `zt1m` 表接入实时订阅，新增采样自动刷新
+- [x] 前端构建验证通过：`cd internal/site && npm run -s build`
+- [x] 部署更新：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .` + `docker compose up -d beszel`
+- [x] 可用性验证：`curl http://127.0.0.1:38005/api/health` 返回 `200`
+- [x] 数据持续更新验证通过：65 秒复测 `zt1m` 从 `966` 增长到 `980`，最新时间前进到 `2026-03-04 09:50:17Z`
+
+### 问题
+- **问题**：`npm run -s check` 在项目现状下存在大量历史 lint/format 诊断，无法作为本次改动门禁。
+- **解决**：使用 `npx tsc --noEmit` + `npm run -s build` 验证本次改动可编译、可打包，并单独核验 `zt1m` 数据实时增长。

@@ -83,6 +83,14 @@ export interface SystemInfo {
 	efs?: Record<string, number>
 	/** services [totalServices, numFailedServices] */
 	sv?: [number, number]
+	/** ZeroTier 193 latency in ms, injected by zt latency sync */
+	z193?: number
+	/** ZeroTier 193 jitter in ms, injected by zt latency sync */
+	z193_jitter?: number
+	/** ZeroTier 193 status (up/down/na/disabled), injected by zt latency sync */
+	z193_status?: string
+	/** unix timestamp for latest zt probe */
+	zt_probe_ts?: number
 }
 
 export interface SystemStats {
@@ -232,6 +240,18 @@ export interface SystemStatsRecord extends RecordModel {
 	system: string
 	stats: SystemStats
 	created: string | number
+}
+
+export interface ZtLatencyRecord extends RecordModel {
+	system: string
+	type?: string
+	stats?: Pick<SystemStats, "z193l" | "z193j" | "z193s">
+	created: string
+	expand?: {
+		system?: {
+			name: string
+		}
+	}
 }
 
 export interface AlertRecord extends RecordModel {
