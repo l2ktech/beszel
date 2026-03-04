@@ -39,6 +39,12 @@
 - [x] 完成部署：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .` 并 `docker compose up -d beszel`
 - [x] 可用性验证：`/api/health` 返回 200
 - [x] 完成本地提交：`3981dc8f`
+- [x] 复用 planning 执行 th16 连通性排查（目标更正为 `192.168.193.13:38005`）
+- [x] 本机验证 `.13:38005`：`ping` 正常、`nc` 可连、`curl` 返回 `HTTP 200`
+- [x] 远端交叉验证：`192.168.193.10` 访问 `.13:38005` 返回 `HTTP 200`
+- [x] 完成 `192.168.193.*` 存活探测（大多数节点在线）
+- [x] 输出结论：服务端与网段整体正常，问题聚焦 th16 本机侧
+- [x] 完成 MCP 钉钉任务通知发送
 
 ### 问题
 - **问题**：前端构建初次失败（`lingui: command not found`）。
@@ -46,3 +52,18 @@
 
 - **问题**：`git push` 返回 `403`（`Permission to henrygd/beszel.git denied to l2ktech`）。
 - **解决**：已保留本地提交并发送钉钉通知，等待切换有权限的 remote 凭据后补推送。
+
+## 会话 2026-03-04（192->193 批量替换）
+### 完成
+- [x] 复用本任务 planning 并补充增量查重记录
+- [x] 备份数据库：`beszel_data/data.db.bak.20260304-171733.ip192to193`
+- [x] 批量替换 `systems.host`：`192.168.192.* -> 192.168.193.*`
+- [x] 重启 hub 并验证健康接口（`/api/health` = 200）
+- [x] 等待一个轮询周期后复测状态：`up=12 / down=2`
+
+### 问题
+- **问题**：地址切换后仍有两台离线（`15Xpro-wsl`、`SjH-OpenWrt`）。
+- **解决**：已确认不是批量地址配置问题，需单机排查 agent 服务/端口或网络策略。
+
+- **问题**：`win-cli` SSH MCP 接口全部报 response body 解码错误，无法直接做 SSH MCP 连通性测试。
+- **解决**：改用本机 SSH + 远端节点交叉验证完成诊断；`th16` 仍需可用凭据后补最终远端命令。
