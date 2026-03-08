@@ -304,3 +304,24 @@
 - **发现**：`win-cli` SSH MCP 可以创建 `ds224` 连接，但执行命令仍触发 `error decoding response body`。
 - **来源**：`create_ssh_connection` 成功、`ssh_exec` 失败日志。
 - **影响**：本次实际执行改用本机 `ssh + expect` 兜底完成。
+
+
+## 2026-03-08 DS224 运行状态审计
+- **发现**：`DS224+` 当前 DSM 版本为 `7.2.1-69057 Update 5`，Beszel 状态 `up`，连接类型 `ct=2(WebSocket)`，根分区 `/` 约 `20%`，数据卷 `/volume3` 约 `74%`，内存可用约 `12Gi`。
+- **来源**：群晖远端命令 `uname` / `VERSION` / `df -h` / `free -h` 与 Hub 数据库查询。
+- **影响**：系统整体处于可用状态，当前不属于资源紧急告警级别。
+
+## 2026-03-08 DS224 当前运行服务
+- **发现**：当前确认的 Docker 服务包括 `beszel-agent`、`zerotier`、`docker-registry`、`gitea`、`dify-on-wechat`；高占用/高活跃进程包括 `Jellyfin`、`gitea`、`SynologyPhotos` 对应 `postgres`，以及 `syncthing`。
+- **来源**：远端 `docker ps` 与 `ps aux --sort=-%mem`。
+- **影响**：群晖承担媒体、代码托管、同步与 AI 相关多类任务，建议后续做服务收敛与资源分层。
+
+## 2026-03-08 DS224 可优化项
+- **发现**：`Docker 20.10.23` 已偏旧；SSH 仍启用 `PasswordAuthentication yes`；对外监听端口较多（大量 nginx 代理端口）；`syncthing` 长期较活跃。
+- **来源**：远端 Docker/SSH/端口/进程检查。
+- **影响**：短期可用，但长期存在运行复杂度偏高与暴露面偏大的问题，建议优先做升级与暴露面收敛。
+
+## 2026-03-08 DS224 安全性与入侵迹象判断
+- **发现**：已抽样检查 `authorized_keys`、SSH 配置与认证日志，当前仅看到 `wzy` 用户的授权公钥；历史存在少量认证失败记录（局域网来源和一条外部来源 `218.78.179.165` 的 Web UI/secure signin 失败），未在本次抽样中看到明确的成功异常登录、陌生公钥或明显恶意常驻进程。
+- **来源**：远端 `authorized_keys`、`auth.log` 抽样、当前容器与监听端口。
+- **影响**：**目前未发现已被入侵的明确证据**，但不能据此证明绝对安全；密码 SSH 开启和多服务暴露仍是客观风险项。
