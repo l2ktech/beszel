@@ -23,6 +23,7 @@ ALERT_DINGTALK_TOKEN="${ALERT_DINGTALK_TOKEN:-}"
 ALERT_DINGTALK_SECRET="${ALERT_DINGTALK_SECRET:-}"
 ALERT_DINGTALK_KEYWORD="${ALERT_DINGTALK_KEYWORD:-}"
 ALERT_SYSTEM_FILTER_REGEX="${ALERT_SYSTEM_FILTER_REGEX:-}"
+ZT_TARGET_193_MAP="${ZT_TARGET_193_MAP:-ds224=192.168.193.188}"
 
 timestamp() {
   date '+%Y-%m-%d %H:%M:%S %z'
@@ -263,9 +264,37 @@ probe_ms() {
   echo "-1"
 }
 
+lookup_target_193_override() {
+  local system_name="$1"
+  local mapping entry key value
+
+  mapping="${ZT_TARGET_193_MAP:-}"
+  [[ -n "$mapping" ]] || return 1
+
+  IFS=',' read -r -a entries <<< "$mapping"
+  for entry in "${entries[@]}"; do
+    key="${entry%%=*}"
+    value="${entry#*=}"
+    if [[ "$key" == "$system_name" && -n "$value" ]]; then
+      printf '%s
+' "$value"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 derive_target_193() {
-  local host="$1"
+  local system_name="$1"
+  local host="$2"
   local octet
+  local override
+
+  if override="$(lookup_target_193_override "$system_name")"; then
+    echo "$override"
+    return 0
+  fi
 
   if [[ "$host" =~ ^192\.168\.192\.([0-9]{1,3})$ ]]; then
     octet="${BASH_REMATCH[1]}"
@@ -471,7 +500,7 @@ main() {
     prev_status_192="${prev_status_192:-}"
     prev_status_193="${prev_status_193:-}"
     has_status_alert="$(to_int "$has_status_alert")"
-    pair="$(derive_target_193 "$host")"
+    pair="$(derive_target_193 "$name" "$host")"
     pair_valid=0
     ip193=""
 
