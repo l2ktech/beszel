@@ -255,3 +255,18 @@
 - 采集状态：正常（WebSocket 常连接）
 - 优化优先级：`SSH密码登录`、`Docker/Container Manager 版本`、`外露端口收敛`、`Syncthing` 负载关注
 - 安全结论：未发现明确入侵证据，但当前暴露面与认证方式仍建议加固
+
+
+## 会话 2026-03-08（DS224 运维与安全体检）
+### 完成
+- [x] 连接 DS224 并确认 DSM / Docker / Beszel 当前运行态
+- [x] 识别当前主要容器服务：`beszel-agent`、`zerotier`、`docker-registry`、`gitea`、`dify-on-wechat`
+- [x] 抽查系统资源：根盘、数据卷、内存、主要进程
+- [x] 抽查安全面：SSH 配置、授权公钥、账户清单、认证失败日志
+- [x] 停掉并禁用旧的本机版 `beszel-agent` systemd 服务，保留容器版 WebSocket 常连接
+- [x] 将 DS224 连接/部署/审计结论写入 Obsidian 服务器笔记
+
+### 当前状态
+- DS224 已接入 Beszel，连接模式 `ct=2`
+- 群晖当前总体运行正常，未发现明确被入侵证据
+- 主要待优化点：SSH 密码登录、旧 Docker 版本、旧 agent 文件清理、端口暴露面治理

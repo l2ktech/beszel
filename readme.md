@@ -45,6 +45,7 @@ This repository includes local operational customizations that are not part of u
 - Updated the home systems table to fully expand smaller deployments instead of showing only a short scroll window.
 - Switched the MacBook agent to WebSocket mode to reduce transient SSH/ZT down-state flicker on the dashboard.
 - Added a Synology DS224+ node using a Dockerized agent connected via WebSocket instead of SSH polling.
+- Documented DS224+ onboarding, current service footprint, and a first-pass security review in the private notes and local project docs.
 
 For local operational details, see the project notes under `文档/` and `planning/`.
 
