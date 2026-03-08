@@ -197,3 +197,16 @@
 - [x] 连接 `top-rustdesk(192.168.193.9:35622)`，确认根盘 `98%`，`/var/lib/docker` 占用约 `57GB`
 - [ ] 继续定位 Docker/ClickHouse 明细并判断可清理项
 - [ ] 整理提交并推送到个人仓库
+
+
+## 会话 2026-03-08（Status 开关联动 zT 通知）
+### 完成
+- [x] 确认小铃铛 `Status` 开关的数据来源：`alerts` 表中的 `name='Status'` 记录
+- [x] 修改 `scripts/zt_latency_sync.sh`：发送 zT 通知前先检查当前系统是否存在 `Status` 告警记录
+- [x] 本地语法校验通过：`bash -n scripts/zt_latency_sync.sh`
+- [x] 手动执行脚本验证：`jetson` / `SjH-OpenWrt` 在 `Status` 关闭时不再推进 `z193_last_offline_alert_ts`
+- [x] 更新 planning / 文档 / README / Obsidian
+
+### 当前状态
+- `Status` 打开：该设备允许发送 zT `offline/recovery/jitter` 钉钉通知
+- `Status` 关闭：该设备继续采样 `z193`，但 zT 钉钉通知静默

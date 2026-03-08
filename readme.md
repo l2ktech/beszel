@@ -41,6 +41,7 @@ This repository includes local operational customizations that are not part of u
 - Set the local deployment to `BESZEL_HUB_SQLITE_JOURNAL_MODE=DELETE` and `BESZEL_HUB_SQLITE_SYNCHRONOUS=FULL` to avoid WAL-related corruption in the current macOS + OrbStack bind-mount environment.
 - Preserved custom `systems.info` fields such as `z193`, `z193_jitter`, `z193_status`, and `zt_probe_ts` when the hub updates system records.
 - Restored the `ZT 193 Latency` home-table column by preventing hub writes from overwriting script-injected latency metadata.
+- Linked the UI alert bell `Status` toggle to zT 193 DingTalk notifications so disabling `Status` silences zT offline/recovery/jitter messages for that system.
 - Updated the home systems table to fully expand smaller deployments instead of showing only a short scroll window.
 
 For local operational details, see the project notes under `文档/` and `planning/`.

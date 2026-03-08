@@ -251,3 +251,19 @@
 - **发现**：停掉 `langfuse-clickhouse-1` 后，直接清空 4 个系统日志表对应的数据目录并重启容器，根盘使用率从 `99%` 降到 `50%`，可用空间恢复到约 `47GB`。
 - **来源**：SSH 执行目录级清理与清理后 `df -h /` 复核。
 - **影响**：磁盘告警已解除，Langfuse Web / Worker / ClickHouse 容器均恢复运行。后续如不加 retention，系统日志仍可能再次增长。
+
+
+## 2026-03-08 Status 开关与 zT 通知关系确认
+- **发现**：UI 小铃铛中的 `Status` 开关在数据库中对应 `alerts` 表里 `name='Status'` 的记录；`jetson` 与 `SjH-OpenWrt` 当前都没有该记录。
+- **来源**：`alerts-sheet.tsx`、`sqlite3 beszel_data/data.db` 查询。
+- **影响**：只要脚本读取 `alerts` 表中的 `Status` 记录，就能与界面开关直接联动。
+
+## 2026-03-08 zT 通知联动修复
+- **发现**：`zt_latency_sync.sh` 已调整为仅在设备存在 `Status` 告警记录时，才发送 zT 的 `offline/recovery/jitter` 钉钉通知；关闭小铃铛中的 `Status` 后，该设备虽然仍会采样 `z193`，但不会再发 zT 消息。
+- **来源**：`scripts/zt_latency_sync.sh` 修改与手动执行验证。
+- **影响**：界面 `Status` 开关现在就是 zT 钉钉通知开关。
+
+## 2026-03-08 关闭状态后的验证
+- **发现**：在 `jetson`、`SjH-OpenWrt` 均无 `Status` 告警记录的前提下，手动执行脚本后，两台的 `z193_last_offline_alert_ts` 保持不变，且日志中未出现新的 `alert event` / `dingtalk send`。
+- **来源**：执行前后对比 `json_extract(info,'$.z193_last_offline_alert_ts')` 与脚本日志。
+- **影响**：已满足“关掉某台设备的 Status 后，这台 zT 离线/恢复/抖动通知都不再发送”的目标。
