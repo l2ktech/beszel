@@ -379,3 +379,39 @@
 - **发现**：`jetson` 的 `opencode-sync.timer` 当前处于 `enabled + active`，但实际定时描述为“每30分钟检查一次”，与本机配置仓库 README 中“5min”描述不一致。
 - **来源**：远端 `systemctl --user status opencode-sync.timer`、`/Users/wzy/40-Projects/00-最新配置/README.md`。
 - **影响**：后续若依赖被动同步，配置生效可能存在最长约 30 分钟延迟；如需即时生效仍建议手动执行同步脚本。
+
+## 2026-03-08 全节点同时掉线根因
+- **发现**：出现“所有 Beszel 节点都变成 `down`”时，本机到多个节点的连通性仍然正常：`192.168.193.10/.13/.14/.16/.18/.20/.17/.9`、`192.168.192.188` 仍可 `ping`，`45876` 端口也可连通；使用 Hub 私钥从本机直连 `192.168.193.13:45876` 也能成功取回 agent stats。
+- **来源**：本机 `ping` / `nc -vz` / `ssh -i beszel_data/id_ed25519 -p 45876` 实测。
+- **影响**：可排除“193 网络整体断开”与“所有 agent 同时挂掉”这两类表面原因。
+
+- **发现**：即便是 WebSocket 模式的 `ds224` 也被判成 `down`；同时 `docker compose ps` 与 `/api/health` 均正常，但 `sqlite3 beszel_data/data.db 'pragma quick_check;'` 报出 `wrong # of entries in index idx_GxIee0j`、`sqlite_autoindex_system_stats_1` 与 freelist 错误。
+- **来源**：数据库状态查询、`docker compose ps`、`curl http://127.0.0.1:38005/api/health`。
+- **影响**：根因位于 Hub 当前数据库损坏，而不是单纯 SSH 轮询链路问题。
+
+- **发现**：将 Hub 停止后尝试对当前 live DB 执行 `reindex system_stats; vacuum;`，直接返回 `database disk image is malformed`；但最近的备份 `beszel_data/data.db.bak.20260308-153411.jetson-host-fallback` 仍然 `quick_check=ok`，且其中状态为 `up=12/down=2/paused=1`。
+- **来源**：离线修复命令与备份库 `quick_check` 对比。
+- **影响**：当前 live DB 已不能做原地轻修复，恢复路径应改为回滚到最近的干净备份。
+
+- **发现**：恢复 `15:34` 的干净备份并重启 Hub 后，`ds224` 立即重新回到 `up`，约 15 秒后整体恢复到 `up=14/paused=1`。
+- **来源**：恢复后轮询 `systems` 表状态聚合与单机状态。
+- **影响**：本次全节点掉线已经恢复，且恢复结果进一步印证问题是数据库损坏导致的状态失真/写入异常。
+
+- **发现**：高概率诱因是“本机 host 侧 `sqlite3` 直接写库（包括 `zt_latency_sync.sh` 与人工 SQL）”与“容器内 Beszel Hub 同时访问同一个 bind mount SQLite 文件”的组合；恢复后我已临时停掉 `com.wzy.beszel.zt-latency-sync` launch agent，当前 `1m` 继续推进，而 `zt1m` 停在恢复前时间点。
+- **来源**：恢复前后 `1m/zt1m` 时间推进对比、launch agent 状态、此前已出现的多次 SQLite 损坏时间线。
+- **影响**：当前 Beszel 主监控已恢复稳定；但自定义 zT 延迟写库已被临时熔断，后续需要改成更安全的写入路径（例如 API/容器内写入）后再恢复。
+
+## 2026-03-08 jetson 193 真正恢复
+- **发现**：`jetson` 实际同时存在两个 ZeroTier 实例：
+  - 主实例 `zerotier-one.service` -> `ztr2qynjg3` -> `192.168.192.201`
+  - 第二实例 `zerotier-self.service` -> `ztdfilglme` -> `192.168.193.201`
+- **来源**：远端 `ps -ef | grep zerotier`、`systemctl list-unit-files | grep zerotier`、`ip -brief addr`。
+- **影响**：`193` 地址不是假接口，而是由第二实例维护的真实网络接口。
+
+- **发现**：在 `jetson` 上使用 `ztdfilglme` 作为源接口可成功 ping 通 `192.168.193.13` 与 `192.168.193.10`；随后本机再次实测 `192.168.193.201` 的 `ICMP/22/45876` 也全部恢复正常，Hub 私钥可成功认证 `192.168.193.201:45876`。
+- **来源**：远端 `ping -I ztdfilglme`、本机 `ping` / `nc -vz` / `ssh -i beszel_data/id_ed25519 -p 45876`。
+- **影响**：`jetson` 的 193 网络已经恢复为可用状态，可安全把 Beszel 地址切回 `192.168.193.201`。
+
+- **发现**：将 `jetson.host` 切回 `192.168.193.201` 后，连续两轮状态轮询均保持 `up`，更新时间继续推进。
+- **来源**：恢复后 `systems` 表轮询查询。
+- **影响**：`jetson` 现已真正回到 `193` 地址工作，不再依赖 `192.168.192.201` fallback。

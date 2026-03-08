@@ -302,3 +302,35 @@
 
 - **问题**：`jetson` 的自动同步定时器实际为 30 分钟一次，与 README 中“5 分钟”描述不一致。
 - **解决**：本次已手动确认即时状态；后续如需消除认知偏差，需回仓库统一 README / timer 文案。
+
+## 会话 2026-03-08（全节点掉线恢复与 jetson 193 真正修复）
+### 完成
+- [x] 发现 Beszel 全节点同时 `down`，但本机到各节点 `193/192` 地址与 `45876` 端口仍普遍可达
+- [x] 确认连 WebSocket 的 `ds224` 也被打成 `down`，据此排除“SSH 轮询单点故障”
+- [x] 确认 live DB 再次损坏：`pragma quick_check` 报 `idx_GxIee0j`、`sqlite_autoindex_system_stats_1` 与 freelist 错误
+- [x] 停止 Hub 与 `com.wzy.beszel.zt-latency-sync` 写库任务，尝试 `reindex/vacuum` 失败，改用最近干净备份恢复
+- [x] 使用 `beszel_data/data.db.bak.20260308-153411.jetson-host-fallback` 恢复 live DB，并重启 Hub
+- [x] 验证恢复成功：约 15 秒内状态回到 `up=14 / paused=1`
+- [x] 保持 `zt-latency-sync` 暂停，避免立即再次把 DB 写坏
+- [x] 远端确认 `jetson` 同时存在 `zerotier-one` 与 `zerotier-self` 两个实例，`ztdfilglme=192.168.193.201` 为真实 193 接口
+- [x] 验证 `192.168.193.201` 再次可达，且 Hub 私钥可成功登录 agent 端口 `45876`
+- [x] 将 `jetson.host` 切回 `192.168.193.201`，并连续两轮验证保持 `up`
+- [x] 更新 planning / 项目文档 / Obsidian / 通知
+
+### 当前状态
+- Beszel：`up=14 / paused=1 / down=0`
+- `jetson.host=192.168.193.201`
+- `jetson.status=up`
+- `1m` 采样已恢复推进
+- `zt1m` 采样当前暂停在恢复前时间点（因为临时停掉了 host 侧写库任务）
+- `com.wzy.beszel.zt-latency-sync` 当前为停止状态，等待后续改安全写入路径再恢复
+
+### 问题与解决
+- **问题**：当前 live DB 已损坏到无法原地 `reindex`，继续强修风险很高。
+- **解决**：回滚到最近一份 `quick_check=ok` 的备份，并保留损坏库备查。
+
+- **问题**：用户感知为“全部节点都掉了”，容易误以为是 ZeroTier 全网挂了。
+- **解决**：通过本机到多节点端口连通性、以及 `ds224(ct=2)` 也掉线这一事实，快速收敛到 Hub/DB 层故障。
+
+- **问题**：`jetson` 的 193 地址此前短时不可达，且有两个 ZeroTier 实例并存，排障路径容易混淆。
+- **解决**：最终确认第二实例 `zerotier-self.service` 负责 `192.168.193.201`，待其恢复可达后，再将 Beszel 地址切回 `193`。
