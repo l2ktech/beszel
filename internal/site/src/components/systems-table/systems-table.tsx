@@ -331,7 +331,7 @@ export default function SystemsTable() {
 
 const AllSystemsTable = memo(
 	({ table, rows, colLength }: { table: TableType<SystemRecord>; rows: Row<SystemRecord>[]; colLength: number }) => {
-		// The virtualizer will need a reference to the scrollable container element
+		const useVirtualizedRows = rows.length > 100
 		const scrollRef = useRef<HTMLDivElement>(null)
 
 		const virtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
@@ -348,30 +348,38 @@ const AllSystemsTable = memo(
 		return (
 			<div
 				className={cn(
-					"h-min max-h-[calc(100dvh-17rem)] max-w-full relative overflow-auto border rounded-md",
-					// don't set min height if there are less than 2 rows, do set if we need to display the empty state
+					"max-w-full relative border rounded-md",
+					useVirtualizedRows ? "h-min max-h-[calc(100dvh-17rem)] overflow-auto" : "overflow-x-auto overflow-y-visible",
 					(!rows.length || rows.length > 2) && "min-h-50"
 				)}
 				ref={scrollRef}
 			>
-				{/* add header height to table size */}
-				<div style={{ height: `${virtualizer.getTotalSize() + 50}px`, paddingTop, paddingBottom }}>
-					<table className="text-sm w-full h-full">
+				{useVirtualizedRows ? (
+					<div style={{ height: `${virtualizer.getTotalSize() + 50}px`, paddingTop, paddingBottom }}>
+						<table className="text-sm w-full h-full">
+							<SystemsTableHead table={table} />
+							<TableBody onMouseEnter={preloadSystemDetail}>
+								{rows.length ? (
+									virtualRows.map((virtualRow) => {
+										const row = rows[virtualRow.index] as Row<SystemRecord>
+										return <SystemTableRow key={row.id} row={row} rowHeight={virtualRow.size} colLength={colLength} />
+									})
+								) : (
+									<TableRow>
+										<TableCell colSpan={colLength} className="h-37 text-center pointer-events-none">
+											<Trans>No systems found.</Trans>
+										</TableCell>
+									</TableRow>
+								)}
+							</TableBody>
+						</table>
+					</div>
+				) : (
+					<table className="text-sm w-full">
 						<SystemsTableHead table={table} />
 						<TableBody onMouseEnter={preloadSystemDetail}>
 							{rows.length ? (
-								virtualRows.map((virtualRow) => {
-									const row = rows[virtualRow.index] as Row<SystemRecord>
-									return (
-										<SystemTableRow
-											key={row.id}
-											row={row}
-											virtualRow={virtualRow}
-											length={rows.length}
-											colLength={colLength}
-										/>
-									)
-								})
+								rows.map((row) => <SystemTableRow key={row.id} row={row} colLength={colLength} />)
 							) : (
 								<TableRow>
 									<TableCell colSpan={colLength} className="h-37 text-center pointer-events-none">
@@ -381,7 +389,7 @@ const AllSystemsTable = memo(
 							)}
 						</TableBody>
 					</table>
-				</div>
+				)}
 			</div>
 		)
 	}
@@ -409,12 +417,11 @@ function SystemsTableHead({ table }: { table: TableType<SystemRecord> }) {
 const SystemTableRow = memo(
 	({
 		row,
-		virtualRow,
+		rowHeight,
 		colLength,
 	}: {
 		row: Row<SystemRecord>
-		virtualRow: VirtualItem
-		length: number
+		rowHeight?: number
 		colLength: number
 	}) => {
 		const system = row.original
@@ -432,7 +439,7 @@ const SystemTableRow = memo(
 							key={cell.id}
 							style={{
 								width: cell.column.getSize(),
-								height: virtualRow.size,
+								height: rowHeight,
 							}}
 							className="py-0"
 						>

@@ -137,3 +137,101 @@
 - **发现**：修复部署后，12 台 `up` 系统均恢复 `1m` 样本写入（每台均有最近记录），`zt1m` 同时保持连续增长。
 - **来源**：部署后多轮 DB 复测。
 - **影响**：首页/历史页/系统详情的数据链路恢复一致，用户可同时看到延迟与原生资源曲线。
+
+## 2026-03-05 “数据准备中”二次复发定位与修复
+- **发现**：用户反馈“仍在收集足够数据”，复测发现 `zt1m` 持续增长，但 `1m` 在 `2026-03-05 00:39:19Z` 后再次停更；停更期间首页/详情页会再次出现“数据准备中”。
+- **来源**：`sqlite3` 查询 `system_stats` 类型分布与 `max(created)`。
+- **影响**：仅靠 `decode/wait` 超时仍不足以覆盖所有 SSH 卡死点，原生图表存在二次回归风险。
+
+- **发现**：`fetchDataViaSSH` 仍可能在 `session.Shell()` / 编码写入等阶段挂起，`runSSHOperation` 缺少“整次会话操作总超时”，会导致 updater goroutine 卡住且状态不及时降级。
+- **来源**：源码审查 `internal/hub/systems/system.go` 与停更分布（仅少数系统持续写入）。
+- **影响**：出现“状态看似 up，但 1m 不再写入”的假在线。
+
+- **发现**：已新增会话级总超时保护：`runSSHOperation(sessionTimeout, operationTimeout, ...)`，超时后主动 `session.Close()` 并触发重试/重连。
+- **来源**：代码变更 `internal/hub/systems/system.go`。
+- **影响**：任何 SSH 阶段阻塞都不会无限卡死，`1m` 采样恢复持续写入。
+
+- **发现**：重建部署后 85 秒复测，`1m` 计数 `155 -> 181`，13 台在线主机均写入新样本，仅 `SjH-OpenWrt` 仍 `down`。
+- **来源**：`docker build/up` 后两次 DB 对比查询。
+- **影响**：二次回归已消除，图表“数据准备中”恢复正常退出。
+
+## 2026-03-05 两台 down 设备修复结果
+- **发现**：`15Xpro-wsl` 可通过 `192.168.193.17:22022` SSH 登录，agent 进程与 `45877` 监听正常；此前 `down` 为连接抖动导致，恢复后状态已转 `up` 并持续写入 `1m`。
+- **来源**：SSH 实测（`pgrep/ss`）与 DB 状态对比。
+- **影响**：`15Xpro-wsl` 监控链路恢复。
+
+- **发现**：`SjH-OpenWrt` 本机 agent 正常（`/etc/init.d/beszel-agent`，`TOKEN=38ef8a20-7194-4207-9929-5cdc2821416b`，`PORT=45876`），但 `192.168.193.203` 对应网络长期 `REQUESTING_CONFIGURATION`，短期无法恢复到 193 地址。
+- **来源**：经 `rock5c` 跳板 SSH 到 `192.168.1.1:35622`，执行 `zerotier-cli` 与进程检查。
+- **影响**：根因在 ZeroTier 控制面分配，不是 agent 进程故障。
+
+- **发现**：已执行兜底恢复：将 `SjH-OpenWrt.host` 临时改为 `192.168.1.1` 并重启 Hub，随后状态转 `up`，`1m` 新样本恢复写入。
+- **来源**：DB 更新 + Hub 重启 + `system_stats` 验证。
+- **影响**：当前 `up=14/down=0`，采集与图表全部恢复；后续可在控制面修复后再切回 `192.168.193.203`。
+
+## 2026-03-05 系统表“流量偏高/多系统数值一致”定位
+- **发现**：`BE6500` 与 `SjH-OpenWrt` 出现近似相同的 CPU/内存/磁盘/网络值，根因是 `SjH-OpenWrt` 仍使用临时兜底地址 `192.168.1.1:45876`，与 `BE6500` 的 `192.168.193.16` 实际为同一台设备。
+- **来源**：数据库 `systems` 主机映射查询 + SSH host key 指纹比对（`192.168.193.16:35622` 与 `192.168.1.1:35622` 指纹一致 `SHA256:6fYNQn5g8laa033Qsp5T3IInNBAV2zQD1wn9QJIPa34`）。
+- **影响**：UI 显示为“两个系统”，但数据源相同，导致看起来“多客户端数值一致/流量重复”。
+
+- **发现**：`BE6500` 的网络值偏高本身是合理现象：该设备为网关，统计口径覆盖转发流量（含 LAN 客户端出网/回流），并非单一终端应用流量。
+- **来源**：最新 `system_stats(1m)` 中 `ni` 接口明细（`eth1/eth1.1/pppoe-wan/utun` 等均有持续吞吐）。
+- **影响**：网关类设备网络吞吐显著高于普通终端属正常行为。
+
+## 2026-03-05 修复动作与结果
+- **发现**：已将 `SjH-OpenWrt` 回切到真实目标 `192.168.193.203:45876`，并清空临时缓存指标（`info={}`）防止继续展示旧值。
+- **来源**：`sqlite3 beszel_data/data.db` 更新 `systems` 记录。
+- **影响**：`SjH-OpenWrt` 当前显示 `down`（待 193 网络恢复），不再复用 `BE6500` 数据。
+
+- **发现**：Hub 服务可用性正常（`/api/health` 返回 200）。
+- **来源**：`docker compose up -d beszel` + `curl http://127.0.0.1:38005/api/health`。
+- **影响**：修复未引入服务可用性回归。
+
+## 2026-03-08 UI 未更新 / 数据停更根因
+- **发现**：运行中容器 `beszel:zt-latency-email` 已启动，但 `system_stats.type in ('1m','zt1m')` 的最新样本一度停在 `2026-03-05`，与用户反馈“界面没更新、很多数据不刷新”一致。
+- **来源**：`docker compose ps`、`sqlite3 beszel_data/data.db "select type, max(created), count(*) ..."`。
+- **影响**：问题首先是采集链路停更，不是单纯前端刷新问题。
+
+## 2026-03-08 数据库损坏确认
+- **发现**：`beszel_data/data.db` 执行 `PRAGMA quick_check` 报 `database disk image is malformed`，损坏集中在 `system_stats` 相关页与索引。
+- **来源**：`sqlite3 beszel_data/data.db 'pragma quick_check;'`。
+- **影响**：Hub 原生 `1m` 写入与自定义 `zt1m` 查询都会受影响，直接导致页面长期显示旧数据或“数据准备中”。
+
+## 2026-03-08 现有修改影响评估
+- **发现**：当前未提交的 `internal/hub/systems/system.go` 是 SSH 采集总超时保护，`go build ./internal/cmd/hub` 通过；该改动属于稳态增强，不会破坏主功能。
+- **来源**：`git diff`、`go build ./internal/cmd/hub`。
+- **影响**：用户之前的后端改动不是本次停更根因，应保留并一并部署。
+
+## 2026-03-08 WAL / bind mount 风险确认
+- **发现**：PocketBase 默认以 `journal_mode(WAL)` 连接 SQLite；在当前 macOS + OrbStack + bind mount `./beszel_data:/beszel_data` 环境下，恢复库一旦以 WAL 模式重新打开，查询很快再次报 malformed。
+- **来源**：本地依赖源码 `github.com/pocketbase/pocketbase@v0.36.1/core/db_connect.go` 与实测（恢复库上线后普通查询再次失败，但 `immutable=1` 读取主库正常）。
+- **影响**：若不调整 journal mode，仅恢复 `data.db` 不能根治，后续仍有再次损坏风险。
+
+## 2026-03-08 修复方案与结果
+- **发现**：为 Hub 新增可配置 SQLite pragma（`BESZEL_HUB_SQLITE_JOURNAL_MODE` / `BESZEL_HUB_SQLITE_SYNCHRONOUS`），当前部署设置为 `DELETE/FULL`；同时使用 `.recover` 离线恢复数据库并重新部署镜像。
+- **来源**：`internal/cmd/hub/hub.go`、`docker-compose.yml`、`docker-compose.override.zt.yml`、`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .`。
+- **影响**：恢复后 `pragma journal_mode=delete`、`pragma quick_check=ok`，数据库恢复到可稳定写入状态。
+
+## 2026-03-08 回归验证
+- **发现**：85 秒复测中，`1m` 从 `550` 增长到 `568`，`zt1m` 从 `13230` 增长到 `13272`，最新样本时间前进到 `2026-03-08 08:25:30+08:00`。
+- **来源**：两次 `sqlite3 beszel_data/data.db "select type, max(created), count(*) ..."` 对比，以及 `./scripts/zt_latency_sync.sh` 手动补跑验证。
+- **影响**：UI 所依赖的原生资源数据与 193 延迟数据均已恢复连续刷新，主功能可用。
+
+## 2026-03-08 剩余问题
+- **发现**：当前仍有两个历史节点状态未收口：`jetson=down`、`SjH-OpenWrt=paused`。
+- **来源**：`sqlite3 beszel_data/data.db "select name,status,updated from systems"`。
+- **影响**：这两个节点属于设备侧可用性问题，不影响本次“页面不刷新 / 数据停更 / 主链路失效”的主问题闭环。
+
+## 2026-03-08 193 延迟列空白根因
+- **发现**：`zt_latency_sync.sh` 实际每分钟都探测并写入 `z193/z193_jitter/z193_status`，日志显示最新值正常；但首页读取的 `systems.info.z193*` 在多数在线节点上被覆盖为空。
+- **来源**：`/Users/wzy/Library/Logs/com.wzy.beszel.zt-latency-sync.log` 与 `sqlite3 beszel_data/data.db "select json_extract(info,'$.z193') ... from systems"` 对比。
+- **影响**：问题不是 193 探测失败，而是 Hub 在保存系统状态时整块覆盖 `systems.info`，把脚本注入的自定义字段擦掉，导致首页 `ZT 193 Latency` 列显示空白。
+
+## 2026-03-08 系统页“Waiting for enough records”判断
+- **发现**：数据库中 12 台 `up` 节点的 `1m` 样本持续增长，最近样本推进到 `2026-03-08 08:44:45 CST`；前台根页面已切到新构建资产 `index-DVLGcacx.js`。
+- **来源**：`sqlite3 beszel_data/data.db` 查询与 `curl http://127.0.0.1:38005/`。
+- **影响**：系统页长期“Waiting for enough records to display”更可能是之前前端旧包/旧页面状态导致；当前运行包已更新，刷新后应按最新 `1m` 数据正常显示。
+
+## 2026-03-08 客户端列表只显示 7 个根因
+- **发现**：首页系统表使用虚拟滚动容器，默认 `max-h-[calc(100dvh-17rem)]`，视觉上只显示约 7 行，其余需要滚动。
+- **来源**：`internal/site/src/components/systems-table/systems-table.tsx`。
+- **影响**：这不是数据条数限制，而是前端表格容器高度限制；已按“小规模系统列表直接全展开”修复。

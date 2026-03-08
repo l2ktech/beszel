@@ -256,7 +256,11 @@ func (sys *System) createRecords(data *system.CombinedData) (*core.Record, error
 
 		// update system record (do this last because it triggers alerts and we need above records to be inserted first)
 		systemRecord.Set("status", up)
-		systemRecord.Set("info", data.Info)
+		mergedInfo, err := mergeSystemInfo(systemRecord.Get("info"), data.Info)
+		if err != nil {
+			return err
+		}
+		systemRecord.Set("info", mergedInfo)
 		if err := txApp.SaveNoValidate(systemRecord); err != nil {
 			return err
 		}
@@ -264,6 +268,67 @@ func (sys *System) createRecords(data *system.CombinedData) (*core.Record, error
 	})
 
 	return systemRecord, err
+}
+
+var nativeSystemInfoKeys = map[string]struct{}{
+	"h":   {},
+	"k":   {},
+	"c":   {},
+	"t":   {},
+	"m":   {},
+	"u":   {},
+	"cpu": {},
+	"mp":  {},
+	"dp":  {},
+	"b":   {},
+	"v":   {},
+	"p":   {},
+	"g":   {},
+	"dt":  {},
+	"os":  {},
+	"l1":  {},
+	"l5":  {},
+	"l15": {},
+	"bb":  {},
+	"la":  {},
+	"ct":  {},
+	"efs": {},
+	"sv":  {},
+	"bat": {},
+}
+
+func mergeSystemInfo(existing any, latest system.Info) (map[string]any, error) {
+	latestInfo := map[string]any{}
+	latestBytes, err := json.Marshal(latest)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(latestBytes, &latestInfo); err != nil {
+		return nil, err
+	}
+
+	if existing == nil {
+		return latestInfo, nil
+	}
+
+	existingBytes, err := json.Marshal(existing)
+	if err != nil {
+		return nil, err
+	}
+
+	existingInfo := map[string]any{}
+	if err := json.Unmarshal(existingBytes, &existingInfo); err != nil {
+		return nil, err
+	}
+
+	for key, value := range existingInfo {
+		if _, isNative := nativeSystemInfoKeys[key]; isNative {
+			continue
+		}
+		latestInfo[key] = value
+	}
+
+	return latestInfo, nil
 }
 
 func createSystemDetailsRecord(app core.App, data *system.Details, systemId string) error {
@@ -546,7 +611,7 @@ func makeStableHashId(strings ...string) string {
 // This function encapsulates the original SSH logic.
 // It updates sys.data directly upon successful fetch.
 func (sys *System) fetchDataViaSSH(options common.DataRequestOptions) (*system.CombinedData, error) {
-	err := sys.runSSHOperation(4*time.Second, 1, func(session *ssh.Session) (bool, error) {
+	err := sys.runSSHOperation(4*time.Second, 15*time.Second, 1, func(session *ssh.Session) (bool, error) {
 		stdout, err := session.StdoutPipe()
 		if err != nil {
 			return false, err
@@ -606,7 +671,7 @@ func (sys *System) fetchDataViaSSH(options common.DataRequestOptions) (*system.C
 
 // runSSHOperation establishes an SSH session and executes the provided operation.
 // The operation can request a retry by returning true as the first return value.
-func (sys *System) runSSHOperation(timeout time.Duration, retries int, operation func(*ssh.Session) (bool, error)) error {
+func (sys *System) runSSHOperation(sessionTimeout time.Duration, operationTimeout time.Duration, retries int, operation func(*ssh.Session) (bool, error)) error {
 	for attempt := 0; attempt <= retries; attempt++ {
 		if sys.client == nil || sys.Status == down {
 			if err := sys.createSSHClient(); err != nil {
@@ -614,7 +679,7 @@ func (sys *System) runSSHOperation(timeout time.Duration, retries int, operation
 			}
 		}
 
-		session, err := sys.createSessionWithTimeout(timeout)
+		session, err := sys.createSessionWithTimeout(sessionTimeout)
 		if err != nil {
 			if attempt >= retries {
 				return err
@@ -624,10 +689,28 @@ func (sys *System) runSSHOperation(timeout time.Duration, retries int, operation
 			continue
 		}
 
-		retry, opErr := func() (bool, error) {
+		type opResult struct {
+			retry bool
+			err   error
+		}
+		resultCh := make(chan opResult, 1)
+		go func() {
 			defer session.Close()
-			return operation(session)
+			retry, opErr := operation(session)
+			resultCh <- opResult{retry: retry, err: opErr}
 		}()
+
+		var retry bool
+		var opErr error
+		select {
+		case res := <-resultCh:
+			retry = res.retry
+			opErr = res.err
+		case <-time.After(operationTimeout):
+			retry = true
+			opErr = fmt.Errorf("ssh operation timeout after %s", operationTimeout)
+			session.Close()
+		}
 
 		if opErr == nil {
 			return nil

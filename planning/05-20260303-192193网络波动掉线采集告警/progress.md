@@ -113,3 +113,87 @@
 
 - **问题**：`git push` 返回 `403`（`Permission to henrygd/beszel.git denied to l2ktech`）。
 - **解决**：已保留本地提交 `259a24b4`、`01605673`，待切换有写权限凭据后补推送。
+
+## 会话 2026-03-05（二次“数据准备中” + 两台 down 收口）
+### 完成
+- [x] 复现实况：用户反馈“正在收集足够的数据来显示”，DB 显示 `zt1m` 连续、`1m` 再次停更
+- [x] 二次修复后端：`runSSHOperation` 增加会话级总超时，覆盖 `Shell/Encode` 等潜在阻塞点
+- [x] 本地验证通过：`go build ./internal/cmd/hub`
+- [x] 部署更新：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .` + `docker compose up -d beszel`
+- [x] 修复验证通过：85 秒复测 `1m` 从 `155` 增长到 `181`
+- [x] `15Xpro-wsl` 修复闭环：`192.168.193.17:22022` SSH 可达，`45877` 监听正常，状态恢复 `up`
+- [x] `SjH-OpenWrt` 修复闭环：确认设备本机 agent 正常，临时切换主机到 `192.168.1.1:45876` 后恢复 `up`
+- [x] 最终状态：`up=14 / down=0`，`1m` 与 `zt1m` 均持续更新
+
+### 问题
+- **问题**：`win-cli` SSH MCP 仍返回 response body 解码错误，无法按用户要求直接使用 MCP 连接。
+- **解决**：改用本机 SSH + 跳板 SSH（`rock5c`）完成远端修复与验证，并在 planning 中保留 MCP 故障记录。
+
+- **问题**：`SjH-OpenWrt` 的 193 网络成员长期 `REQUESTING_CONFIGURATION`，无法在本会话内恢复 `192.168.193.203`。
+- **解决**：先切换为可达管理地址 `192.168.1.1` 保证监控恢复；后续待 ZeroTier 控制面授权完成后再切回 193 地址。
+
+## 会话 2026-03-05（系统表流量/资源数值异常一致）
+### 完成
+- [x] 复用本任务 planning 并补充增量查重记录（相似度 96%）
+- [x] 定位根因：`SjH-OpenWrt` 临时指向 `192.168.1.1:45876`，与 `BE6500` 实际同机，导致双记录读取同一数据源
+- [x] 完成同机证据校验：`192.168.193.16:35622` 与 `192.168.1.1:35622` SSH 指纹一致
+- [x] 修复映射：`SjH-OpenWrt.host` 回切 `192.168.193.203`，并清空旧 `info` 防止继续展示缓存指标
+- [x] Hub 健康验证：`/api/health` 返回 200
+- [x] 完成 MCP 钉钉任务通知发送
+
+### 问题与解决
+- **问题**：用户观察到“多个客户端流量/CPU/内存几乎一致”，怀疑采集异常。
+- **解决**：确认属于系统映射重复（同一设备双地址）而非采集算法错误；已回切 `SjH` 到真实地址，消除重复数据展示。
+
+## 会话 2026-03-08（UI 未更新 / 数据停更 / SQLite 恢复）
+### 完成
+- [x] 复用本任务 planning 并补充增量查重记录（相似度 99%）
+- [x] 确认运行态：容器在线，但 `1m/zt1m` 最新样本停在 `2026-03-05`
+- [x] 确认根因：`beszel_data/data.db` 损坏，`PRAGMA quick_check` 报 malformed
+- [x] 离线演练 `.recover`，生成可通过 `quick_check` 的恢复库
+- [x] 保留当前 `internal/hub/systems/system.go` SSH 总超时保护改动，并完成本地构建验证
+- [x] 新增 Hub SQLite pragma 配置：支持 `BESZEL_HUB_SQLITE_JOURNAL_MODE` / `BESZEL_HUB_SQLITE_SYNCHRONOUS`
+- [x] 将当前部署切换为 `DELETE/FULL`，避免 PocketBase 默认 WAL 在 bind mount 上再次损坏
+- [x] 备份坏库并切换为恢复库，重建镜像 `beszel:zt-latency-email`，重新启动容器
+- [x] 回归验证通过：85 秒内 `1m` 与 `zt1m` 均恢复连续增长
+- [x] 手动补跑 `./scripts/zt_latency_sync.sh`，确认自定义 193 延迟链路正常
+- [x] 同步 planning / 项目文档 / Obsidian
+
+### 问题与解决
+- **问题**：恢复库首次上线后，PocketBase 重新以 WAL 模式打开数据库，普通查询很快再次报 malformed。
+- **解决**：不是恢复库本身失效，而是 WAL + bind mount 组合继续引入坏写；通过新增可配置 DB pragmas，并在 compose 中切到 `journal_mode=DELETE`、`synchronous=FULL` 根治。
+
+- **问题**：启动日志保留过一次 `database disk image is malformed: malformed database schema ...`。
+- **解决**：重启后不再复现，且 `pragma quick_check=ok`、采样持续增长，判定为恢复过程中的历史残留日志，不再阻塞本次交付。
+
+### 当前状态
+- `1m` 最新样本：`2026-03-08 08:25:34+08:00`
+- `zt1m` 最新样本：`2026-03-08 08:25:30+08:00`
+- Hub 健康：`curl http://127.0.0.1:38005/api/health` 返回 `200`
+- DB 状态：`pragma journal_mode=delete`，`pragma quick_check=ok`
+- 剩余节点：`jetson=down`、`SjH-OpenWrt=paused`（历史设备侧问题，未影响本次主链路恢复）
+
+## 会话 2026-03-08（193 列空白 / 系统页空白 / 首页全展开）
+### 完成
+- [x] 确认当前采样持续更新：`1m` 最新样本推进到 `2026-03-08 08:44:45 CST`，`zt1m` 推进到 `2026-03-08 08:45:08 CST`
+- [x] 定位 193 列空白根因：Hub 保存 `systems.info` 时覆盖掉脚本注入的 `z193*` 字段
+- [x] 修复后端：保留 `systems.info` 中非原生字段，避免 `z193/z193_jitter/z193_status/zt_probe_ts` 被覆盖
+- [x] 修复前端：首页系统表在 `rows<=100` 时直接全量展开，不再默认只露出约 7 行
+- [x] 重新构建前端：`cd internal/site && npm run -s build`
+- [x] 重新构建并部署 Hub：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email .` + `docker compose up -d beszel`
+- [x] 验证通过：根页面切到新资产 `index-DVLGcacx.js`，`systems.info.z193*` 恢复稳定写入
+
+### 当前状态
+- 在线节点（12 台）原生 `1m` 与 `zt1m` 都在正常推进
+- `ZT 193 Latency` 列已恢复可显示数值
+- 首页系统表已改为小规模节点直接全展开
+- 历史异常节点仍是：`jetson=down`、`SjH-OpenWrt=paused`
+
+
+## 会话 2026-03-08（个人仓库保存 / README / top磁盘排查）
+### 完成
+- [x] 确认个人仓库存在：`https://github.com/l2ktech/beszel`，已添加 remote `personal`
+- [x] 更新 `readme.md`，补充本地最新改动说明
+- [x] 连接 `top-rustdesk(192.168.193.9:35622)`，确认根盘 `98%`，`/var/lib/docker` 占用约 `57GB`
+- [ ] 继续定位 Docker/ClickHouse 明细并判断可清理项
+- [ ] 整理提交并推送到个人仓库

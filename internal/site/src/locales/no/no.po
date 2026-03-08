@@ -491,7 +491,9 @@ msgid "Create account"
 msgstr "Opprett konto"
 
 #. Context: date created
+#. Context: date created
 #: src/components/alerts-history-columns.tsx
+#: src/components/routes/settings/alerts-history-data-table.tsx
 msgid "Created"
 msgstr "Opprettet"
 
@@ -595,7 +597,9 @@ msgstr "Dokumentasjon"
 
 #. Context: System is down
 #: src/components/alerts-history-columns.tsx
+#: src/components/routes/settings/alerts-history-data-table.tsx
 #: src/components/routes/system/info-bar.tsx
+#: src/components/systems-table/systems-table-columns.tsx
 #: src/components/systems-table/systems-table-columns.tsx
 #: src/lib/alerts.ts
 msgid "Down"
@@ -838,6 +842,7 @@ msgstr "Inaktiv"
 msgid "Invalid email address."
 msgstr "Ugyldig e-postadresse."
 
+#: src/components/routes/settings/alerts-history-data-table.tsx
 #: src/components/routes/system.tsx
 msgid "Jitter"
 msgstr ""
@@ -847,6 +852,7 @@ msgstr ""
 msgid "Language"
 msgstr "Språk"
 
+#: src/components/routes/settings/alerts-history-data-table.tsx
 #: src/components/routes/system.tsx
 msgid "Latency"
 msgstr ""
@@ -1012,6 +1018,7 @@ msgstr "Ingen resultater funnet."
 #: src/components/containers-table/containers-table.tsx
 #: src/components/containers-table/containers-table.tsx
 #: src/components/routes/settings/alerts-history-data-table.tsx
+#: src/components/routes/settings/alerts-history-data-table.tsx
 #: src/components/routes/system/smart-table.tsx
 #: src/components/systemd-table/systemd-table.tsx
 msgid "No results."
@@ -1021,6 +1028,7 @@ msgstr "Ingen resultater."
 msgid "No S.M.A.R.T. attributes available for this device."
 msgstr "Ingen S.M.A.R.T.-attributter tilgjengelig for denne enheten."
 
+#: src/components/systems-table/systems-table.tsx
 #: src/components/systems-table/systems-table.tsx
 #: src/components/systems-table/systems-table.tsx
 msgid "No systems found."
@@ -1262,6 +1270,7 @@ msgstr "Rot"
 msgid "Rotate token"
 msgstr "Forny token"
 
+#: src/components/routes/settings/alerts-history-data-table.tsx
 #: src/components/routes/system.tsx
 msgid "Round-trip latency and jitter for 193 network probes"
 msgstr ""
@@ -1377,7 +1386,9 @@ msgid "Start Time"
 msgstr "Starttid"
 
 #. Context: alert state (active or resolved)
+#. Context: alert state (active or resolved)
 #: src/components/alerts-history-columns.tsx
+#: src/components/routes/settings/alerts-history-data-table.tsx
 #: src/components/routes/settings/quiet-hours.tsx
 #: src/components/systemd-table/systemd-table-columns.tsx
 msgid "State"
@@ -1406,6 +1417,7 @@ msgstr "Swap-bruk"
 #: src/components/add-system.tsx
 #: src/components/alerts-history-columns.tsx
 #: src/components/containers-table/containers-table-columns.tsx
+#: src/components/routes/settings/alerts-history-data-table.tsx
 #: src/components/routes/settings/quiet-hours.tsx
 #: src/components/routes/settings/quiet-hours.tsx
 #: src/components/routes/settings/quiet-hours.tsx
@@ -1626,6 +1638,7 @@ msgid "Unlimited"
 msgstr "Ubegrenset"
 
 #. Context: System is up
+#: src/components/routes/settings/alerts-history-data-table.tsx
 #: src/components/routes/system/info-bar.tsx
 #: src/components/systems-table/systems-table-columns.tsx
 msgid "Up"
@@ -1758,6 +1771,8 @@ msgstr "Ja"
 msgid "Your user settings have been updated."
 msgstr "Dine brukerinnstillinger har blitt oppdatert."
 
+#: src/components/routes/settings/alerts-history-data-table.tsx
 #: src/components/routes/system.tsx
+#: src/components/systems-table/systems-table-columns.tsx
 msgid "ZT 193 Latency"
 msgstr ""

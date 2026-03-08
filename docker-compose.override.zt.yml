@@ -1,0 +1,9 @@
+services:
+  beszel:
+    image: beszel:zt-latency-email
+    environment:
+      BESZEL_HUB_ZT_LATENCY_ENABLED: 'true'
+      BESZEL_HUB_ZT_LATENCY_WARN_MS: '180'
+      BESZEL_HUB_ZT_LATENCY_TIMEOUT_MS: '1200'
+      BESZEL_HUB_SQLITE_JOURNAL_MODE: 'DELETE'
+      BESZEL_HUB_SQLITE_SYNCHRONOUS: 'FULL'

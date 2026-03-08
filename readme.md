@@ -29,6 +29,22 @@ Beszel consists of two main components: the **hub** and the **agent**.
 - **Hub**: A web application built on [PocketBase](https://pocketbase.io/) that provides a dashboard for viewing and managing connected systems.
 - **Agent**: Runs on each system you want to monitor and communicates system metrics to the hub.
 
+
+## Local deployment notes
+
+This repository includes local operational customizations that are not part of upstream Beszel defaults.
+
+### Latest local changes (2026-03-08)
+
+- Added SSH collection timeout safeguards to avoid the hub getting stuck while polling SSH-based systems.
+- Recovered a corrupted SQLite `data.db` and made the hub SQLite journal mode configurable for local deployments.
+- Set the local deployment to `BESZEL_HUB_SQLITE_JOURNAL_MODE=DELETE` and `BESZEL_HUB_SQLITE_SYNCHRONOUS=FULL` to avoid WAL-related corruption in the current macOS + OrbStack bind-mount environment.
+- Preserved custom `systems.info` fields such as `z193`, `z193_jitter`, `z193_status`, and `zt_probe_ts` when the hub updates system records.
+- Restored the `ZT 193 Latency` home-table column by preventing hub writes from overwriting script-injected latency metadata.
+- Updated the home systems table to fully expand smaller deployments instead of showing only a short scroll window.
+
+For local operational details, see the project notes under `文档/` and `planning/`.
+
 ## Getting started
 
 The [quick start guide](https://beszel.dev/guide/getting-started) and other documentation is available on our website, [beszel.dev](https://beszel.dev). You'll be up and running in a few minutes.
