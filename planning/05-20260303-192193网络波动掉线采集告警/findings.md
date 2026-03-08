@@ -283,3 +283,24 @@
 - **发现**：切换后至少 75 秒观察窗口内，`macbook` 状态保持 `up`，未新增新的 `Status` 掉线历史记录。
 - **来源**：切换后轮询 `systems.status/info.ct` 与 `alerts_history`。
 - **影响**：本次切换已初步生效；后续若再偶发掉线，应优先排查 MacBook 本机网络瞬断，而不是 Beszel 轮询机制。
+
+
+## 2026-03-08 DS224 接入路径确认
+- **发现**：`DS224+` 现有笔记记录可用 SSH 入口为 `wzy@192.168.1.100:35622`（局域网备地址），ZeroTier 主地址 `192.168.192.188:35622` 当下不可达。
+- **来源**：Obsidian 笔记 `SRV-007: 群晖NAS (DS224+)` 与本机连通性测试。
+- **影响**：本次落地接入改走局域网 SSH，而非 ZeroTier SSH。
+
+## 2026-03-08 DS224 Beszel WebSocket 接入
+- **发现**：已在群晖 `DS224+` 上通过 Docker 启动 `henrygd/beszel-agent:latest`，使用 `KEY + TOKEN + HUB_URL + LISTEN` 环境变量接入 Beszel，其中 `HUB_URL=http://192.168.1.4:38005`。
+- **来源**：远端 `docker run`、容器日志 `WebSocket connected host=192.168.1.4:38005`。
+- **影响**：DS224 不依赖 SSH 轮询作为主要采集方式，而是走 WebSocket 常连接。
+
+## 2026-03-08 DS224 接入验证
+- **发现**：Hub 中已出现 `ds224`，状态 `up`，连接类型 `ct=2`，agent 版本 `0.18.4`；指纹记录已自动落库。
+- **来源**：`sqlite3 beszel_data/data.db` 查询 `systems` 与 `fingerprints`。
+- **影响**：DS224 已成功纳入 Beszel 监控，并以常连接模式采集。
+
+## 2026-03-08 SSH MCP 实际情况
+- **发现**：`win-cli` SSH MCP 可以创建 `ds224` 连接，但执行命令仍触发 `error decoding response body`。
+- **来源**：`create_ssh_connection` 成功、`ssh_exec` 失败日志。
+- **影响**：本次实际执行改用本机 `ssh + expect` 兜底完成。

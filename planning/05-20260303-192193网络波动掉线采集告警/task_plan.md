@@ -205,3 +205,10 @@
 - [x] 刷新 MacBook WebSocket token 并更新 launchd 配置
 - [x] 验证 `ct` 切换为 `2(WebSocket)` 且短时稳定
 - [x] 更新 planning / 文档 / Obsidian / 推送
+
+### [x] 阶段17：DS224 群晖接入 Beszel WebSocket 采集（2026-03-08）
+- [x] 检索 DS224 现有 SSH/服务器信息并确认接入参数
+- [x] 通过 SSH 连接 DS224，使用 root 权限部署 `beszel-agent` 容器
+- [x] 采用 `HUB_URL + TOKEN` 模式接入，避免 SSH 轮询采集
+- [x] 验证 DS224 在 Hub 中状态为 `up` 且连接类型为 `ct=2`
+- [x] 更新 planning / 文档 / Obsidian / 推送

@@ -44,6 +44,7 @@ This repository includes local operational customizations that are not part of u
 - Linked the UI alert bell `Status` toggle to zT 193 DingTalk notifications so disabling `Status` silences zT offline/recovery/jitter messages for that system.
 - Updated the home systems table to fully expand smaller deployments instead of showing only a short scroll window.
 - Switched the MacBook agent to WebSocket mode to reduce transient SSH/ZT down-state flicker on the dashboard.
+- Added a Synology DS224+ node using a Dockerized agent connected via WebSocket instead of SSH polling.
 
 For local operational details, see the project notes under `文档/` and `planning/`.
 

@@ -225,3 +225,18 @@
 - `macbook` 当前连接模式：`WebSocket (ct=2)`
 - 当前状态：`up`
 - 现象缓解：切换后的观察窗口内未再出现“红色掉线闪一下”
+
+
+## 会话 2026-03-08（DS224 群晖接入 Beszel）
+### 完成
+- [x] 从现有笔记中确认 DS224 信息：`wzy@192.168.1.100:35622` 可用，群晖支持 Docker / Container Manager
+- [x] 在 Hub 中为 `ds224` 创建系统记录与专属 token / fingerprint 占位
+- [x] 通过 SSH 登录群晖，并使用 `sudo` 在 `/volume3/docker/beszel-agent` 下部署 `henrygd/beszel-agent:latest`
+- [x] 配置 `HUB_URL=http://192.168.1.4:38005`，采用 WebSocket 常连接模式
+- [x] 验证容器日志出现 `WebSocket connected host=192.168.1.4:38005`
+- [x] 验证 Hub 中 `ds224.status=up`、`ds224.info.ct=2`、agent 版本 `0.18.4`
+
+### 当前状态
+- `ds224` 已接入 Beszel
+- 连接方式：`WebSocket (ct=2)`
+- 采集方式：常连接，不依赖 SSH 轮询
