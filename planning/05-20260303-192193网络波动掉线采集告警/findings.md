@@ -235,3 +235,19 @@
 - **发现**：首页系统表使用虚拟滚动容器，默认 `max-h-[calc(100dvh-17rem)]`，视觉上只显示约 7 行，其余需要滚动。
 - **来源**：`internal/site/src/components/systems-table/systems-table.tsx`。
 - **影响**：这不是数据条数限制，而是前端表格容器高度限制；已按“小规模系统列表直接全展开”修复。
+
+
+## 2026-03-08 top-rustdesk 磁盘占用根因
+- **发现**：`top-rustdesk(192.168.193.9:35622)` 根分区 `98G` 中已使用 `92G`，主要占用来自 `/var/lib/docker` 的 `57GB`。
+- **来源**：SSH 执行 `df -h /`、`du -x -d1 /var/lib`、`docker system df -v`。
+- **影响**：并非系统盘被普通家目录吃满，而是 Docker 卷占用异常膨胀。
+
+## 2026-03-08 top-rustdesk 实际大头
+- **发现**：最大卷为 `langfuse_langfuse_clickhouse_data`，约 `48GB`；进一步确认是 ClickHouse 系统日志表异常膨胀：`system.trace_log≈40.92GiB`、`system.text_log≈1.86GiB`、`system.metric_log≈1.04GiB`、`system.asynchronous_metric_log≈1011MiB`。
+- **来源**：`docker system df -v` 与 `docker exec langfuse-clickhouse-1 clickhouse-client ... FROM system.parts ...`。
+- **影响**：这是 Langfuse 所带 ClickHouse 的系统日志堆积，不是 Beszel 或 RustDesk 业务数据本身。
+
+## 2026-03-08 top-rustdesk 清理结果
+- **发现**：停掉 `langfuse-clickhouse-1` 后，直接清空 4 个系统日志表对应的数据目录并重启容器，根盘使用率从 `99%` 降到 `50%`，可用空间恢复到约 `47GB`。
+- **来源**：SSH 执行目录级清理与清理后 `df -h /` 复核。
+- **影响**：磁盘告警已解除，Langfuse Web / Worker / ClickHouse 容器均恢复运行。后续如不加 retention，系统日志仍可能再次增长。
