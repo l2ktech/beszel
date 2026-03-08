@@ -388,6 +388,8 @@ main() {
     prev_last_recovery_alert_193="$(to_int "$prev_last_recovery_alert_193")"
     prev_status_192="${prev_status_192:-}"
     prev_status_193="${prev_status_193:-}"
+    has_status_alert="$(sqlite3 -readonly "$DB_PATH" -cmd ".timeout 5000" "SELECT CASE WHEN EXISTS(SELECT 1 FROM alerts WHERE system='${id}' AND name='Status') THEN 1 ELSE 0 END;" 2>/dev/null || echo 0)"
+    has_status_alert="$(to_int "$has_status_alert")"
     pair="$(derive_target_193 "$host")"
     pair_valid=0
     ip193=""
@@ -439,7 +441,7 @@ main() {
     z192_last_recovery_alert="$prev_last_recovery_alert_192"
     z193_last_recovery_alert="$prev_last_recovery_alert_193"
 
-    if (( pair_valid == 1 )); then
+    if (( pair_valid == 1 )) && (( has_status_alert == 1 )); then
       if [[ "$z193_status" == "down" ]] && (( z193_down_streak >= ALERT_OFFLINE_STREAK )); then
         if (( prev_down_streak_193 < ALERT_OFFLINE_STREAK )) || (( prev_last_offline_alert_193 <= 0 )) || should_alert_with_cooldown "$now_ts" "$prev_last_offline_alert_193"; then
           emit_alert "offline" "$name" "$host" "193" "$z193" "$z193_jitter" "$z193_down_streak"
