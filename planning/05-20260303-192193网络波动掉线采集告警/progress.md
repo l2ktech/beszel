@@ -270,3 +270,65 @@
 - DS224 已接入 Beszel，连接模式 `ct=2`
 - 群晖当前总体运行正常，未发现明确被入侵证据
 - 主要待优化点：SSH 密码登录、旧 Docker 版本、旧 agent 文件清理、端口暴露面治理
+
+## 会话 2026-03-08（jetson 不在线排查与 Codex 配置同步）
+### 完成
+- [x] 复用 `planning/05-20260303-192193网络波动掉线采集告警` 并补增量查重记录（相似度 99%）
+- [x] 确认 Hub/API 正常，`jetson.host` 当前记录为 `192.168.193.201` 且状态 `down`
+- [x] 对比连通性：`192.168.192.201` 的 `ICMP/22/45876` 可达，`192.168.193.201` 全部超时
+- [x] 使用 `beszel_data/id_ed25519` 直连 `192.168.192.201:45876`，确认 agent 在线且 Hub 密钥可认证
+- [x] 备份数据库：`beszel_data/data.db.bak.20260308-153411.jetson-host-fallback`
+- [x] 将 `jetson.host` 临时回切到 `192.168.192.201`，重启 Hub 后约 15 秒恢复 `status=up`
+- [x] 验证恢复后状态：`ct=1`、`z193_status=down`，说明监控已恢复但设备侧 `193` 仍待修复
+- [x] 通过 SSH 登录 `jetson@192.168.192.201`，确认 `00-最新配置` 仓库存在且自动同步 timer 处于 `enabled/active`
+- [x] 将 `jetson` 的 `00-最新配置` 从 `8c50cbf` 拉到 `9bcc083`
+- [x] 执行 `scripts/apply-agent-config-links.sh`，完成 `~/.codex/config.toml` / `AGENTS.md` / `skills` 映射
+- [x] 回读验证：远端 `Codex` 配置哈希与本机一致，`codex login status` 为 `Logged in using ChatGPT`
+- [x] 更新 planning / 项目文档 / Obsidian / 通知
+
+### 问题与解决
+- **问题**：`win-cli` SSH MCP 仍无法返回可解析结果，且普通用户 SSH 默认密钥探测失败。
+- **解决**：监控排障改用 Hub 私钥直连 agent 端口；Codex 配置同步改用 `~/.ssh/id_rsa_github` 登录 `jetson@192.168.192.201`。
+
+- **问题**：`jetson` 当前虽然重新在线，但 `192.168.193.201` 依旧不可达。
+- **解决**：先以 `192.168.192.201` 作为 Beszel fallback 地址恢复在线；后续若要统一到 `193`，需单独修设备侧 ZeroTier/路由。
+
+### 当前状态
+- Beszel：`jetson.status=up`
+- Beszel 地址：`jetson.host=192.168.192.201`（临时 fallback）
+- zT193：`jetson.info.z193_status=down`
+- Codex 配置仓库：`jetson ~/40-Projects/00-最新配置 = 9bcc083`
+- Codex 配置哈希：`28d4c2d6820e5ecdd760599371da5daa68914429db97c002580fd4f2db87a4a5`
+- Codex 登录态：`Logged in using ChatGPT`
+
+## 会话 2026-03-08（jetson 不在线排查与 Codex 配置同步）
+### 完成
+- [x] 复用 `planning/05-20260303-192193网络波动掉线采集告警/` 并补充增量查重记录（相似度 `99%`）
+- [x] 确认 `jetson` 当前记录地址为 `192.168.193.201`，且状态为 `down`
+- [x] 对比连通性：`192.168.192.201` 的 `ping/22/45876` 均正常，`192.168.193.201` 全部超时
+- [x] 使用 `beszel_data/id_ed25519` 直连 `192.168.192.201:45876`，确认 agent 与 Hub 密钥链路正常
+- [x] 备份数据库：`beszel_data/data.db.bak.20260308-153411.jetson-host-fallback`
+- [x] 将 `jetson.host` 临时回切为 `192.168.192.201`，重启 Hub 后验证 `jetson.status=up`
+- [x] 使用 `~/.ssh/id_rsa_github` 连接 `jetson@192.168.192.201`，确认 `~/40-Projects/00-最新配置` 存在且定时同步已启用
+- [x] 执行一次即时同步校验：远端配置仓库已在 `9bcc083`，`~/.codex/*` 链接均正确
+- [x] 同步本机 `~/.codex/auth.json` 到 jetson，并验证远端 `codex login status`
+- [x] 更新 planning / 项目文档 / Obsidian / 通知
+
+### 当前状态
+- `jetson.status=up`
+- `jetson.host=192.168.192.201`（临时 fallback）
+- `jetson.info.ct=1`
+- `jetson.info.z193_status=down`
+- `jetson ~/40-Projects/00-最新配置 HEAD=9bcc083`
+- `jetson ~/.codex/config.toml` 已链接到仓库最新版本
+- `jetson Codex` 当前登录态：`Logged in using an API key`
+
+### 问题
+- **问题**：默认 SSH 参数下无法直接拿到 jetson shell 登录结论，容易误判为“SSH 不可用”。
+- **解决**：改用笔记中记录的 `jetson@192.168.192.201 + ~/.ssh/id_rsa_github` 明确验证，确认 shell SSH 正常可用。
+
+- **问题**：`win-cli` SSH MCP 仍然无法使用，返回 `response body` 解码错误。
+- **解决**：本次统一改用本机 `ssh/scp` 兜底完成 Beszel 与 Codex 两条链路的验证和同步。
+
+- **问题**：`jetson` 的自动同步定时器实际为 30 分钟一次，与 README 中“5 分钟”描述不一致。
+- **解决**：本次已手动确认即时状态；后续如需消除认知偏差，需回仓库统一 README / timer 文案。

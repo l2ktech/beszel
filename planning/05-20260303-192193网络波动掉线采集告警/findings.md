@@ -346,3 +346,67 @@
 - **发现**：`authorized_keys` 中仅看到 `wzy` 用户一条公钥；抽查认证日志可见历史 `admin` / `wzy` 失败认证记录，但当前样本中未发现明显异常成功登录或后门服务。
 - **来源**：授权密钥文件、`/var/log/auth.log`、账户列表 `/etc/passwd`。
 - **影响**：在已抽查范围内**未发现明确被入侵证据**；但 SSH 密码登录开启、服务暴露面较大，安全基线仍偏宽松。
+
+## 2026-03-08 jetson 不在线根因定位
+- **发现**：Hub 当前记录的 `jetson.host` 为 `192.168.193.201`，但本机实测只有 `192.168.192.201` 可达：`ping`、`22/tcp`、`45876/tcp` 均成功；`192.168.193.201` 的 `ICMP/22/45876` 全部超时。
+- **来源**：`sqlite3 beszel_data/data.db` 查询、`ping`、`nc -vz` 连通性测试。
+- **影响**：Beszel Hub 轮询的是当前不可达的 `193` 地址，因此把 `jetson` 标记为 `down`。
+
+- **发现**：使用 Hub 私钥 `beszel_data/id_ed25519` 直连 `192.168.192.201:45876` 可成功认证并返回 agent 统计 JSON，说明 agent 本身在线、Hub 密钥链正常。
+- **来源**：`ssh -i beszel_data/id_ed25519 -p 45876 root@192.168.192.201` 实测。
+- **影响**：可排除“agent 挂掉 / Hub 公私钥不匹配”这两类常见原因，根因聚焦到地址选择与设备侧 `193` 网络可达性。
+
+- **发现**：备份数据库时间线显示：`2026-03-02` 时 `jetson.host=192.168.192.201,status=up`；`2026-03-05` 时已切到 `192.168.193.201,status=up`；`2026-03-08` 当前同地址变为 `down`。
+- **来源**：`data.db.bak.20260302-100057`、`data.db.bak.20260305-094209.sjh-lan-fallback` 与当前库对比。
+- **影响**：`jetson` 并非“从未支持 193”，而是设备侧 `193` 连通性在后续某个时段退化；若要恢复统一 `193` 管理，仍需单独修复该设备上的 `193` 网络。
+
+- **发现**：将 `jetson.host` 临时回切到 `192.168.192.201` 后，重启 Hub 并等待约 15 秒，`jetson.status` 已恢复为 `up`；同时 `info.ct=1`，但 `info.z193_status` 仍为 `down`。
+- **来源**：数据库备份 `beszel_data/data.db.bak.20260308-153411.jetson-host-fallback`、`UPDATE systems SET host='192.168.192.201'`、Hub 重启后轮询查询。
+- **影响**：监控链路已通过 `192` fallback 恢复；但 `193` 延迟采集仍会继续显示 `down`，后续需修设备侧网络而不是 Hub。
+
+## 2026-03-08 jetson 最新 Codex 配置同步
+- **发现**：`jetson` 本地 `00-最新配置` 仓库原本停在 `8c50cbf`，落后于 `origin/main=9bcc083`；`opencode-sync.timer` 已启用且运行中。
+- **来源**：`ssh jetson@192.168.192.201` 后执行 `git rev-parse --short HEAD`、`systemctl --user is-enabled/is-active opencode-sync.timer`。
+- **影响**：自动同步机制存在，但该机当前尚未拉到最新共享配置，需要手动扇出一次。
+
+- **发现**：通过 `git pull --ff-only origin main` + `scripts/apply-agent-config-links.sh` 后，`jetson` 已更新到 `9bcc083`，且 `~/.codex/config.toml`、`~/.codex/AGENTS.md`、`~/.codex/skills` 都已映射到 `~/40-Projects/00-最新配置/dotfiles/config/codex/*`。
+- **来源**：远端 SSH 执行同步命令与 `readlink -f` 回读验证。
+- **影响**：`jetson` 已和当前主仓库共享相同的 Codex 配置、文档入口和 skills 集合。
+
+- **发现**：`jetson` 端 `~/.codex/config.toml` 的 SHA256 为 `28d4c2d6820e5ecdd760599371da5daa68914429db97c002580fd4f2db87a4a5`，与本机 `00-最新配置` 仓库中的 `dotfiles/config/codex/config.toml` 完全一致；远端 `auth.json` 存在，VSCode Remote 内的 `codex login status` 返回 `Logged in using ChatGPT`。
+- **来源**：本地 `shasum -a 256`、远端 `sha256sum`、远端 VSCode 扩展内 `codex` 可执行文件检查。
+- **影响**：不仅配置已同步，`jetson` 上的 Codex 实际可直接使用，无需再次登录。
+
+## 2026-03-08 jetson 不在线根因
+- **发现**：Hub 数据库中 `jetson.host` 当时为 `192.168.193.201`，但实测只有 `192.168.192.201` 可达；`192.168.193.201` 的 ICMP、`22`、`45876` 均超时。
+- **来源**：`sqlite3 beszel_data/data.db`、本机 `ping`、`nc -vz` 对比检查。
+- **影响**：Hub 一直轮询不可达的 `193` 地址，因此 `jetson` 被标记为 `down`。
+
+- **发现**：使用 Hub 私钥 `beszel_data/id_ed25519` 直连 `192.168.192.201:45876` 能成功完成 SSH 认证并返回 agent 统计数据。
+- **来源**：`ssh -i beszel_data/id_ed25519 -p 45876 root@192.168.192.201`。
+- **影响**：可排除“Hub 密钥错误”与“jetson 上 Beszel agent 未运行”两类根因。
+
+- **发现**：备份库显示 `jetson` 在 `2026-03-02` 时仍使用 `192.168.192.201`，到 `2026-03-05` 曾在 `192.168.193.201` 上短暂恢复为 `up`，说明本次掉线更像是设备侧 `193` 网络后来再次失效，而不是最初批量替换脚本本身写错。
+- **来源**：`beszel_data/data.db.bak.20260302-100057`、`beszel_data/data.db.bak.20260305-094209.sjh-lan-fallback` 对比查询。
+- **影响**：短期可先回切到 `192` 地址恢复监控，长期仍需单独修复 jetson 的 `193` 网络可达性。
+
+- **发现**：将 `systems.host` 临时改回 `192.168.192.201` 并重启 Hub 后，`jetson` 在 15 秒内恢复 `up`；恢复后连接类型仍为 `ct=1`，但 `z193_status` 继续显示 `down`。
+- **来源**：`sqlite3` 更新、`docker compose restart beszel`、轮询 `systems` 表。
+- **影响**：当前监控已恢复，但 `193` 网络健康问题仍存在，只是通过 `192` fallback 绕过了掉线。
+
+## 2026-03-08 jetson Codex 配置同步结果
+- **发现**：`jetson` 上的 `~/40-Projects/00-最新配置` 已被定时同步器追到 `9bcc083`，与本机 `origin/main` 一致；`~/.codex/config.toml`、`~/.codex/skills`、`~/.codex/AGENTS.md` 均正确链接到该仓库。
+- **来源**：远端 `git rev-parse`、`readlink`、本地 `git fetch origin` 对比。
+- **影响**：最新 Codex 共享配置与 skills 实际已经生效，无需额外跑 `home-manager switch`。
+
+- **发现**：本机与 jetson 的 `codex config.toml` SHA-256 一致，均为 `28d4c2d6820e5ecdd760599371da5daa68914429db97c002580fd4f2db87a4a5`。
+- **来源**：本机与远端 `shasum -a 256`。
+- **影响**：可确认 jetson 使用的是当前这份最新 Codex 配置，而非旧副本。
+
+- **发现**：已将本机 `~/.codex/auth.json` 同步到 jetson；远端 `codex login status` 返回 `Logged in using an API key - sk-ant-w***yu123`。
+- **来源**：`scp ~/.codex/auth.json` 与远端 `codex login status`。
+- **影响**：jetson 上的 Codex CLI / VSCode Remote 会话可以直接复用当前登录态。
+
+- **发现**：`jetson` 的 `opencode-sync.timer` 当前处于 `enabled + active`，但实际定时描述为“每30分钟检查一次”，与本机配置仓库 README 中“5min”描述不一致。
+- **来源**：远端 `systemctl --user status opencode-sync.timer`、`/Users/wzy/40-Projects/00-最新配置/README.md`。
+- **影响**：后续若依赖被动同步，配置生效可能存在最长约 30 分钟延迟；如需即时生效仍建议手动执行同步脚本。
