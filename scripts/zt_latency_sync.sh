@@ -6,6 +6,7 @@ DB_PATH="${DB_PATH:-/Users/wzy/projects/08-Beszel/beszel_data/data.db}"
 LOG_PATH="${LOG_PATH:-/Users/wzy/Library/Logs/com.wzy.beszel.zt-latency-sync.log}"
 LOCK_DIR="/tmp/com.wzy.beszel.zt-latency-sync.lock"
 PING_TIMEOUT_MS="${PING_TIMEOUT_MS:-1000}"
+PING_COUNT="${PING_COUNT:-3}"
 ALERT_CONFIG_FILE="${ALERT_CONFIG_FILE:-/Users/wzy/projects/08-Beszel/scripts/zt_alert.env}"
 
 # Optional runtime overrides.
@@ -24,6 +25,9 @@ ALERT_DINGTALK_SECRET="${ALERT_DINGTALK_SECRET:-}"
 ALERT_DINGTALK_KEYWORD="${ALERT_DINGTALK_KEYWORD:-}"
 ALERT_SYSTEM_FILTER_REGEX="${ALERT_SYSTEM_FILTER_REGEX:-}"
 ZT_TARGET_193_MAP="${ZT_TARGET_193_MAP:-ds224=192.168.193.188}"
+ZT_PROBE_RELAY_193_MAP="${ZT_PROBE_RELAY_193_MAP:-ds224=wzy@192.168.193.10:35622}"
+ZT_RELAY_SSH_KEY="${ZT_RELAY_SSH_KEY:-/Users/wzy/.ssh/id_rsa_github}"
+ZT_RELAY_TIMEOUT_SEC="${ZT_RELAY_TIMEOUT_SEC:-5}"
 
 timestamp() {
   date '+%Y-%m-%d %H:%M:%S %z'
@@ -259,6 +263,54 @@ probe_ms() {
       awk -v v="$ms" 'BEGIN { printf("%d\n", (v >= 0 ? v + 0.5 : v - 0.5)) }'
       return 0
     fi
+  fi
+
+  echo "-1"
+}
+
+lookup_probe_relay_193() {
+  local system_name="$1"
+  local mapping entry key value
+
+  mapping="${ZT_PROBE_RELAY_193_MAP:-}"
+  [[ -n "$mapping" ]] || return 1
+
+  IFS=',' read -r -a entries <<< "$mapping"
+  for entry in "${entries[@]}"; do
+    key="${entry%%=*}"
+    value="${entry#*=}"
+    if [[ "$key" == "$system_name" && -n "$value" ]]; then
+      printf '%s
+' "$value"
+      return 0
+    fi
+  done
+  return 1
+}
+
+probe_ms_via_relay() {
+  local system_name="$1"
+  local ip="$2"
+  local relay_spec user_host port output ms
+
+  relay_spec="$(lookup_probe_relay_193 "$system_name")" || {
+    echo "-1"
+    return 0
+  }
+
+  user_host="${relay_spec%:*}"
+  port="${relay_spec##*:}"
+  if [[ "$user_host" == "$relay_spec" ]]; then
+    port="22"
+  fi
+
+  output="$(ssh -F /dev/null -i "$ZT_RELAY_SSH_KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o ConnectTimeout="$ZT_RELAY_TIMEOUT_SEC" -p "$port" "$user_host" "ping -c 3 -W 1 '$ip'" 2>/dev/null || true)"
+  ms="$(printf '%s
+' "$output" | awk -F'time=' '/time=/{print $2; exit}' | awk '{print $1}')"
+  if [[ -n "$ms" ]]; then
+    awk -v v="$ms" 'BEGIN { printf("%d
+", (v >= 0 ? v + 0.5 : v - 0.5)) }'
+    return 0
   fi
 
   echo "-1"
@@ -511,6 +563,9 @@ main() {
 
     z192="-1"
     z193="$(probe_ms "$ip193")"
+    if (( z193 < 0 )); then
+      z193="$(probe_ms_via_relay "$name" "$ip193")"
+    fi
 
     if (( pair_valid == 1 )); then
       z192_jitter="-1"
@@ -582,7 +637,7 @@ import json
 import sys
 
 def to_int(value: str) -> int:
-    return int(value)
+    return int(value or 0)
 
 def nullable(value: str):
     number = int(value)
