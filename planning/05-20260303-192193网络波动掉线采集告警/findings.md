@@ -415,3 +415,33 @@
 - **发现**：将 `jetson.host` 切回 `192.168.193.201` 后，连续两轮状态轮询均保持 `up`，更新时间继续推进。
 - **来源**：恢复后 `systems` 表轮询查询。
 - **影响**：`jetson` 现已真正回到 `193` 地址工作，不再依赖 `192.168.192.201` fallback。
+
+## 2026-03-08 jetson 193 真正修复
+- **发现**：`jetson` 本机同时运行两套 ZeroTier：
+  - 主实例 `zerotier-one`：网络 `565799d8f61f7c2d`，接口 `ztr2qynjg3`，地址 `192.168.192.201`
+  - 副实例 `zerotier-self`：网络 `5cb1bf45e10c6865`，接口 `ztdfilglme`，地址 `192.168.193.201`
+- **来源**：远端 `ip -brief addr`、`systemctl status zerotier-one/zerotier-self`、`zerotier-cli -D/var/lib/zerotier-self -p29993 listnetworks`。
+- **影响**：`193` 地址并未丢失，问题不在“接口不存在”或“未入网”，而在自建 `193` 网络的 peer 状态。
+
+- **发现**：故障时本机 `zerotier-cli listpeers` 中 `fe39a37bbb`（jetson 的 `zerotier-self` 节点）为 `path=-1`；jetson 的 `zerotier-self listpeers` 中本机 `88fd07d63b` 同样为 `path=-1`。
+- **来源**：本机 `zerotier-cli listpeers` 与远端 `sudo zerotier-cli -D/var/lib/zerotier-self -p29993 listpeers`。
+- **影响**：根因是 `macmini <-> jetson` 在 `5cb1bf45e10c6865` 自建网络中的 peer 会话卡死，导致本机无法主动连到 `192.168.193.201`。
+
+- **发现**：从 `jetson` 反向探测本机 `192.168.193.13` 是通的；但本机到 `192.168.193.201` 初始 `ping/22/45876` 都失败，说明表现为“本机侧 peer 状态异常优先”。
+- **来源**：远端 `ping 192.168.193.13`、本机 `ping` / `nc -vz`。
+- **影响**：优先修本机与 jetson 在 `193` 网中的会话刷新，而不是继续修改 jetson 本地 IP/路由。
+
+- **发现**：刷新动作后，peer 已恢复为：
+  - 本机：`fe39a37bbb 192.168.1.116/29993`
+  - jetson：`88fd07d63b 192.168.1.4/9993`
+  延迟稳定在个位数到几十毫秒。
+- **来源**：本机与远端 `listpeers` 最终状态。
+- **影响**：`193` 自建网络的双向 peer 已恢复，`192.168.193.201` 对本机重新可达。
+
+- **发现**：仅直接修改 SQLite 中的 `systems.host` 在 Hub 运行时会被旧进程/内存态覆盖；需先停掉 Hub，再改库，再启动 Hub，`193` 地址才能稳定生效。
+- **来源**：多次 `sqlite3 update + restart` 复测，对比 `host` 回滚行为与 `docker compose stop -> sqlite3 update -> up -d` 的最终稳定结果。
+- **影响**：后续切换系统 host 时，不能只在 Hub 运行中直接改库；应使用“停服务后改库再启动”或走正式 API/界面更新流程。
+
+- **发现**：最终修复后，`jetson` 已恢复为：`host=192.168.193.201`、`status=up`、`ct=1`、`z193=1ms`、`z193_status=up`，本机 `ping` 与 `45876/tcp` 也持续成功。
+- **来源**：`sqlite3 beszel_data/data.db`、本机 `ping` / `nc -vz`、`zt_latency_sync.sh` 最新日志。
+- **影响**：`jetson` 已真正回到 `193` 主链路，不再依赖 `192.168.192.201` fallback。

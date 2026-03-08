@@ -334,3 +334,31 @@
 
 - **问题**：`jetson` 的 193 地址此前短时不可达，且有两个 ZeroTier 实例并存，排障路径容易混淆。
 - **解决**：最终确认第二实例 `zerotier-self.service` 负责 `192.168.193.201`，待其恢复可达后，再将 Beszel 地址切回 `193`。
+
+## 会话 2026-03-08（jetson 193 真正修复）
+### 完成
+- [x] 识别 `jetson` 存在双 ZeroTier 实例：`192` 主实例 + `193` 的 `zerotier-self`
+- [x] 确认 `192.168.193.201` 本机地址存在，问题是 self-hosted 193 网络 peer path 卡死，而不是接口缺失
+- [x] 抓到异常 peer：本机侧 `fe39a37bbb=-1`、jetson 侧 `88fd07d63b=-1`
+- [x] 刷新 193 会话后恢复双向 peer：本机看到 `fe39a37bbb 192.168.1.116/29993`，jetson 看到 `88fd07d63b 192.168.1.4/9993`
+- [x] 验证本机到 `192.168.193.201` 的 `ping/22/45876` 全部恢复
+- [x] 发现运行中的 Hub 会把直接改库的 `host` 覆写回旧值，因此改为：`docker compose stop beszel -> sqlite3 update -> docker compose up -d beszel`
+- [x] 将 `jetson.host` 正式切回 `192.168.193.201`
+- [x] 手动补跑 `./scripts/zt_latency_sync.sh`，确认 `jetson z193=1ms, z193_status=up`
+- [x] 连续约 40+ 秒观察：`host/status/z193_status` 均保持稳定
+- [x] 更新 planning / 项目文档 / Obsidian / 通知
+
+### 当前状态
+- `jetson.host=192.168.193.201`
+- `jetson.status=up`
+- `jetson.info.ct=1`
+- `jetson.info.z193=1`
+- `jetson.info.z193_status=up`
+- 本机到 `192.168.193.201:45876` 连续可达
+
+### 问题与解决
+- **问题**：`192.168.193.201` 明明在 jetson 上存在，但本机始终打不通。
+- **解决**：定位为 `5cb1bf45e10c6865` 自建 193 网络中 `macmini <-> jetson` 的 peer path 卡死，刷新会话后恢复。
+
+- **问题**：直接在运行中的 Hub 里改 `systems.host` 会被旧内存态覆盖回 `192.168.192.201`。
+- **解决**：改为停掉 Hub 后更新数据库，再重新启动 Hub，让 `193` 地址稳定生效。

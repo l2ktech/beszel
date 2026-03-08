@@ -260,3 +260,20 @@
 - [x] 复测 `jetson` 的 `192.168.193.201` 可达性与 agent 认证
 - [x] 将 `jetson.host` 切回 `192.168.193.201` 并验证保持 `up`
 - [x] 更新 planning / 文档 / Obsidian / 通知
+
+### 增量复用判定（2026-03-08 jetson 193 真正修复）
+- 检索时间：2026-03-08 15:42:00 CST
+- 检索范围：`planning/`、`planning/done/`（覆盖 `task_plan.md`、`findings.md`、`progress.md`；`planning/done/` 当前不存在）
+- Top1：`planning/05-20260303-192193网络波动掉线采集告警/`（相似度 99%）
+- Top2：`planning/02-20260303-friendlyWrt无法访问192网络修复/`（相似度 82%）
+- Top3：`planning/03-20260303-项目运行状态检查/`（相似度 71%）
+- 最高相似度：99%
+- 决策：复用本目录继续执行。原因：本次仍是 `jetson` 在 `193` 自建 ZeroTier 网络中的连通性修复，属于本任务的同一网络收口范围。
+
+### [x] 阶段20：jetson 193 网络真正修复（2026-03-08）
+- [x] 核查 `jetson` 双 ZeroTier 实例（主实例 `192` + `zerotier-self` 的 `193`）与 peer 状态
+- [x] 定位 `193` 故障为 `macmini(88fd07d63b)` 与 `jetson(fe39a37bbb)` 在 `5cb1bf45e10c6865` 中 peer path 卡死
+- [x] 刷新本机与 jetson 的 193 ZeroTier 会话并恢复双向连通
+- [x] 将 Beszel `jetson.host` 正式切回 `192.168.193.201`
+- [x] 验证 `jetson.status=up`、`z193_status=up`、`agent 45876` 可达
+- [x] 更新 planning / 文档 / Obsidian / 通知

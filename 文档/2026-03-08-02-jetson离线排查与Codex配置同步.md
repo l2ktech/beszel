@@ -87,3 +87,39 @@
   - 需要单独修复 jetson 的 `193` 网络连通性，再把 `systems.host` 切回 `192.168.193.201`
 - 如果只是确保监控在线：
   - 当前 `192.168.192.201` fallback 可继续稳定使用
+
+## 补充：jetson 193 主链路真正修复（2026-03-08）
+
+### implementation
+- 继续排查发现 `jetson` 并非只有一套 ZeroTier：
+  - `zerotier-one` -> `192.168.192.201` (`ztr2qynjg3`)
+  - `zerotier-self` -> `192.168.193.201` (`ztdfilglme`)
+- 故障点不在 IP 配置，而在 `5cb1bf45e10c6865` 自建 `193` 网络中的 peer 会话：
+  - 本机看 `fe39a37bbb` 为 `path=-1`
+  - jetson 看本机 `88fd07d63b` 为 `path=-1`
+- 刷新后恢复为：
+  - 本机：`fe39a37bbb 192.168.1.116/29993`
+  - jetson：`88fd07d63b 192.168.1.4/9993`
+- 本机到 `192.168.193.201` 的 `ping`、`22/tcp`、`45876/tcp` 全部恢复。
+- 切回 Beszel 主地址时发现：Hub 运行中直接改 `systems.host` 会被旧内存态覆盖，因此最终采用：
+  - `docker compose stop beszel`
+  - `sqlite3 beszel_data/data.db "update systems set host='192.168.193.201' where name='jetson';"`
+  - `docker compose up -d beszel`
+- 最后手动执行一次 `./scripts/zt_latency_sync.sh`，把 `z193` 状态立即刷新为最新值。
+
+### completion
+- 最终状态：
+  - `jetson.host=192.168.193.201`
+  - `jetson.status=up`
+  - `jetson.info.z193=1`
+  - `jetson.info.z193_status=up`
+- 结论：`jetson` 已真正回到 `193` 主链路，不再依赖 `192.168.192.201` fallback。
+
+### usage_guide
+- 验证 `193` 连通：
+  - `ping 192.168.193.201`
+  - `nc -vz 192.168.193.201 45876`
+- 验证 self-hosted 193 peer：
+  - 本机：`zerotier-cli listpeers | grep fe39a37bbb`
+  - jetson：`sudo zerotier-cli -D/var/lib/zerotier-self -p29993 listpeers | grep 88fd07d63b`
+- 若以后再次需要切换 `systems.host`：优先停掉 Hub 后再改库，避免运行中进程把旧 host 覆盖回去。
