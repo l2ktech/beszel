@@ -267,3 +267,19 @@
 - **发现**：在 `jetson`、`SjH-OpenWrt` 均无 `Status` 告警记录的前提下，手动执行脚本后，两台的 `z193_last_offline_alert_ts` 保持不变，且日志中未出现新的 `alert event` / `dingtalk send`。
 - **来源**：执行前后对比 `json_extract(info,'$.z193_last_offline_alert_ts')` 与脚本日志。
 - **影响**：已满足“关掉某台设备的 Status 后，这台 zT 离线/恢复/抖动通知都不再发送”的目标。
+
+
+## 2026-03-08 MacBook 短暂红色掉线根因判断
+- **发现**：`macbook` 会出现约 `48s` 的 `Status down -> up` 抖动，且同一时间 `z193_status` 也同步从 `up` 短暂变成 `down` 后恢复。
+- **来源**：`alerts_history` 中 `Status` 事件时长与 `zt_latency_sync.log` 同时段日志对比。
+- **影响**：问题不是前端误报，而是 `MacBook -> Hub` 的现有 SSH/ZeroTier 采集链路存在短暂不可达。
+
+## 2026-03-08 MacBook WebSocket 切换
+- **发现**：已将 `MacBook` 的 launchd 配置改为带 `HUB_URL + TOKEN` 的 WebSocket 优先模式，并为当前 Hub 刷新了新的专属 token；切换后 `systems.info.ct` 从 `1(SSH)` 变为 `2(WebSocket)`。
+- **来源**：远端 `~/Library/LaunchAgents/com.beszel.agent.plist`、agent 日志 `WebSocket connected host=192.168.193.13:38005`、数据库 `json_extract(info,'$.ct')`。
+- **影响**：MacBook 不再依赖分钟级 SSH 轮询作为主连接路径，可显著降低短暂红色掉线。
+
+## 2026-03-08 MacBook 切换后验证
+- **发现**：切换后至少 75 秒观察窗口内，`macbook` 状态保持 `up`，未新增新的 `Status` 掉线历史记录。
+- **来源**：切换后轮询 `systems.status/info.ct` 与 `alerts_history`。
+- **影响**：本次切换已初步生效；后续若再偶发掉线，应优先排查 MacBook 本机网络瞬断，而不是 Beszel 轮询机制。

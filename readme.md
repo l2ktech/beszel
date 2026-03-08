@@ -43,6 +43,7 @@ This repository includes local operational customizations that are not part of u
 - Restored the `ZT 193 Latency` home-table column by preventing hub writes from overwriting script-injected latency metadata.
 - Linked the UI alert bell `Status` toggle to zT 193 DingTalk notifications so disabling `Status` silences zT offline/recovery/jitter messages for that system.
 - Updated the home systems table to fully expand smaller deployments instead of showing only a short scroll window.
+- Switched the MacBook agent to WebSocket mode to reduce transient SSH/ZT down-state flicker on the dashboard.
 
 For local operational details, see the project notes under `文档/` and `planning/`.
 

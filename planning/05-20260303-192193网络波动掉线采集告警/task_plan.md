@@ -199,3 +199,9 @@
 - Top3：`planning/04-20260303-钉钉Shoutrrr通知故障排查/`（相似度 61%）
 - 最高相似度：99%
 - 决策：复用本目录继续执行。原因：本次仍是同一 zT193 采集/通知链路的行为修复，直接归入原任务。
+
+### [x] 阶段16：MacBook 改为 WebSocket 连接（2026-03-08）
+- [x] 连接 MacBook 检查 agent 运行与当前连接模式
+- [x] 刷新 MacBook WebSocket token 并更新 launchd 配置
+- [x] 验证 `ct` 切换为 `2(WebSocket)` 且短时稳定
+- [x] 更新 planning / 文档 / Obsidian / 推送

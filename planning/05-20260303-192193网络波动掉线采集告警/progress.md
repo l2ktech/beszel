@@ -210,3 +210,18 @@
 ### 当前状态
 - `Status` 打开：该设备允许发送 zT `offline/recovery/jitter` 钉钉通知
 - `Status` 关闭：该设备继续采样 `z193`，但 zT 钉钉通知静默
+
+
+## 会话 2026-03-08（MacBook 改为 WebSocket）
+### 完成
+- [x] 定位 MacBook 红色掉线现象：最新一次 `Status` 抖动约 48 秒，且与 `z193` 探测同一分钟一起掉线
+- [x] 连接 `MacBook(192.168.193.18)` 检查 agent、launchd、端口监听与 Hub 可达性
+- [x] 确认现状为 SSH 模式（`ct=1`），并抓到 WebSocket 接入初次失败原因为 token 无效
+- [x] 为 MacBook 在 Hub 中刷新专属 token，并更新远端 launchd 配置为 `HUB_URL + TOKEN + KEY + LISTEN`
+- [x] 重启 MacBook agent，验证成功建立 WebSocket 连接（`ct=2`）
+- [x] 观察 75 秒：未新增新的 `Status` 掉线事件
+
+### 当前状态
+- `macbook` 当前连接模式：`WebSocket (ct=2)`
+- 当前状态：`up`
+- 现象缓解：切换后的观察窗口内未再出现“红色掉线闪一下”
