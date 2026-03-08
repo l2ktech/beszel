@@ -273,36 +273,6 @@
 
 ## 会话 2026-03-08（jetson 不在线排查与 Codex 配置同步）
 ### 完成
-- [x] 复用 `planning/05-20260303-192193网络波动掉线采集告警` 并补增量查重记录（相似度 99%）
-- [x] 确认 Hub/API 正常，`jetson.host` 当前记录为 `192.168.193.201` 且状态 `down`
-- [x] 对比连通性：`192.168.192.201` 的 `ICMP/22/45876` 可达，`192.168.193.201` 全部超时
-- [x] 使用 `beszel_data/id_ed25519` 直连 `192.168.192.201:45876`，确认 agent 在线且 Hub 密钥可认证
-- [x] 备份数据库：`beszel_data/data.db.bak.20260308-153411.jetson-host-fallback`
-- [x] 将 `jetson.host` 临时回切到 `192.168.192.201`，重启 Hub 后约 15 秒恢复 `status=up`
-- [x] 验证恢复后状态：`ct=1`、`z193_status=down`，说明监控已恢复但设备侧 `193` 仍待修复
-- [x] 通过 SSH 登录 `jetson@192.168.192.201`，确认 `00-最新配置` 仓库存在且自动同步 timer 处于 `enabled/active`
-- [x] 将 `jetson` 的 `00-最新配置` 从 `8c50cbf` 拉到 `9bcc083`
-- [x] 执行 `scripts/apply-agent-config-links.sh`，完成 `~/.codex/config.toml` / `AGENTS.md` / `skills` 映射
-- [x] 回读验证：远端 `Codex` 配置哈希与本机一致，`codex login status` 为 `Logged in using ChatGPT`
-- [x] 更新 planning / 项目文档 / Obsidian / 通知
-
-### 问题与解决
-- **问题**：`win-cli` SSH MCP 仍无法返回可解析结果，且普通用户 SSH 默认密钥探测失败。
-- **解决**：监控排障改用 Hub 私钥直连 agent 端口；Codex 配置同步改用 `~/.ssh/id_rsa_github` 登录 `jetson@192.168.192.201`。
-
-- **问题**：`jetson` 当前虽然重新在线，但 `192.168.193.201` 依旧不可达。
-- **解决**：先以 `192.168.192.201` 作为 Beszel fallback 地址恢复在线；后续若要统一到 `193`，需单独修设备侧 ZeroTier/路由。
-
-### 当前状态
-- Beszel：`jetson.status=up`
-- Beszel 地址：`jetson.host=192.168.192.201`（临时 fallback）
-- zT193：`jetson.info.z193_status=down`
-- Codex 配置仓库：`jetson ~/40-Projects/00-最新配置 = 9bcc083`
-- Codex 配置哈希：`28d4c2d6820e5ecdd760599371da5daa68914429db97c002580fd4f2db87a4a5`
-- Codex 登录态：`Logged in using ChatGPT`
-
-## 会话 2026-03-08（jetson 不在线排查与 Codex 配置同步）
-### 完成
 - [x] 复用 `planning/05-20260303-192193网络波动掉线采集告警/` 并补充增量查重记录（相似度 `99%`）
 - [x] 确认 `jetson` 当前记录地址为 `192.168.193.201`，且状态为 `down`
 - [x] 对比连通性：`192.168.192.201` 的 `ping/22/45876` 均正常，`192.168.193.201` 全部超时
