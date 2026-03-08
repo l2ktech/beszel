@@ -277,3 +277,20 @@
 - [x] 将 Beszel `jetson.host` 正式切回 `192.168.193.201`
 - [x] 验证 `jetson.status=up`、`z193_status=up`、`agent 45876` 可达
 - [x] 更新 planning / 文档 / Obsidian / 通知
+
+### 增量复用判定（2026-03-08 zt-latency-sync 改为安全写入）
+- 检索时间：2026-03-08 16:05:00 CST
+- 检索范围：`planning/`、`planning/done/`（覆盖 `task_plan.md`、`findings.md`、`progress.md`；`planning/done/` 当前不存在）
+- Top1：`planning/05-20260303-192193网络波动掉线采集告警/`（相似度 99%）
+- Top2：`planning/03-20260303-项目运行状态检查/`（相似度 74%）
+- Top3：`planning/04-20260303-钉钉Shoutrrr通知故障排查/`（相似度 61%）
+- 最高相似度：99%
+- 决策：复用本目录继续执行。原因：本次仍是 zT193 采集链路收口，目标是消除 host 侧直写 SQLite 导致的 Hub 故障根因。
+
+### [x] 阶段21：zt-latency-sync 改为 Hub API 安全写入（2026-03-08）
+- [x] 定位当前直接写 SQLite 的高风险路径
+- [x] 在 Hub 中新增认证保护的 zt-latency-sync 写入接口
+- [x] 改造脚本为“只读 DB + 认证调用 Hub API 写入”
+- [x] 重建并部署 Hub，恢复 launchd 定时任务
+- [x] 验证 `zt1m` 恢复推进且 `quick_check` 持续为 `ok`
+- [x] 更新 planning / 文档 / Obsidian / 通知

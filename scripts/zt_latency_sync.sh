@@ -288,6 +288,77 @@ require_cmd() {
   }
 }
 
+load_hub_credentials_from_compose() {
+  if [[ -n "${HUB_EMAIL:-}" && -n "${HUB_PASSWORD:-}" ]]; then
+    return 0
+  fi
+  if [[ ! -f "$COMPOSE_FILE" ]]; then
+    return 0
+  fi
+
+  local creds
+  creds="$('/usr/bin/python3' - "$COMPOSE_FILE" <<'PY'
+from pathlib import Path
+import re
+import sys
+text = Path(sys.argv[1]).read_text()
+email = re.search(r"BESZEL_HUB_USER_EMAIL: '([^']+)'", text)
+password = re.search(r"BESZEL_HUB_USER_PASSWORD: '([^']+)'", text)
+print((email.group(1) if email else '') + "\t" + (password.group(1) if password else ''))
+PY
+  )"
+
+  if [[ -z "${HUB_EMAIL:-}" ]]; then
+    HUB_EMAIL="${creds%%$'\t'*}"
+  fi
+  if [[ -z "${HUB_PASSWORD:-}" ]]; then
+    HUB_PASSWORD="${creds#*$'\t'}"
+  fi
+}
+
+get_hub_auth_token() {
+  if [[ -n "${HUB_AUTH_TOKEN:-}" ]]; then
+    printf '%s\n' "$HUB_AUTH_TOKEN"
+    return 0
+  fi
+
+  load_hub_credentials_from_compose
+  if [[ -z "${HUB_EMAIL:-}" || -z "${HUB_PASSWORD:-}" ]]; then
+    log "hub auth failed: HUB_EMAIL/HUB_PASSWORD not configured and compose fallback missing"
+    return 1
+  fi
+
+  local auth_payload
+  local auth_response
+  auth_payload="$('/usr/bin/python3' - "$HUB_EMAIL" "$HUB_PASSWORD" <<'PY'
+import json
+import sys
+print(json.dumps({"identity": sys.argv[1], "password": sys.argv[2]}, ensure_ascii=False))
+PY
+  )"
+
+  auth_response="$(curl -fsS -X POST "${HUB_BASE_URL}/api/collections/users/auth-with-password" -H 'Content-Type: application/json' -d "$auth_payload")"
+  '/usr/bin/python3' - "$auth_response" <<'PY'
+import json
+import sys
+obj = json.loads(sys.argv[1])
+token = obj.get("token", "")
+if not token:
+    raise SystemExit("missing auth token")
+print(token)
+PY
+}
+
+post_sync_payload() {
+  local payload_file="$1"
+  local auth_token
+  auth_token="$(get_hub_auth_token)"
+  curl -fsS -X POST "${HUB_BASE_URL}/api/beszel/zt-latency-sync" \
+    -H "Authorization: ${auth_token}" \
+    -H 'Content-Type: application/json' \
+    --data @"$payload_file" >/dev/null
+}
+
 main() {
   local id
   local name
@@ -311,6 +382,7 @@ main() {
   local prev_last_jitter_alert_193
   local prev_last_recovery_alert_192
   local prev_last_recovery_alert_193
+  local has_status_alert
   local z192
   local z193
   local z192_jitter
@@ -332,9 +404,16 @@ main() {
   local z193_latency_chart
   local z193_jitter_chart
   local now_ts
-  local id_escaped
-  local sql
   local scanned=0
+  local first_update=1
+  local payload_file
+  local update_json
+
+  HUB_BASE_URL="${HUB_BASE_URL:-http://127.0.0.1:38005}"
+  HUB_AUTH_TOKEN="${HUB_AUTH_TOKEN:-}"
+  HUB_EMAIL="${HUB_EMAIL:-}"
+  HUB_PASSWORD="${HUB_PASSWORD:-}"
+  COMPOSE_FILE="${COMPOSE_FILE:-/Users/wzy/projects/08-Beszel/docker-compose.yml}"
 
   require_cmd sqlite3
   require_cmd ping
@@ -349,12 +428,14 @@ main() {
     log "previous run still active, skip"
     exit 0
   fi
-  trap cleanup EXIT
 
-  log "start sync db=$DB_PATH"
+  payload_file="$(mktemp /tmp/zt-latency-sync.XXXXXX)"
+  trap 'cleanup; rm -f "${payload_file:-}"' EXIT
+
+  log "start sync db=$DB_PATH hub=${HUB_BASE_URL}"
   log "config alerts_enabled=${ALERTS_ENABLED} offline_streak=${ALERT_OFFLINE_STREAK} jitter_warn_ms=${ALERT_JITTER_WARN_MS} jitter_streak=${ALERT_JITTER_STREAK} cooldown_sec=${ALERT_COOLDOWN_SEC}"
 
-  sql="BEGIN IMMEDIATE;"
+  printf '{"updates":[' >"$payload_file"
 
   while IFS=$'\t' read -r \
     id name host \
@@ -365,7 +446,8 @@ main() {
     prev_status_192 prev_status_193 \
     prev_last_offline_alert_192 prev_last_offline_alert_193 \
     prev_last_jitter_alert_192 prev_last_jitter_alert_193 \
-    prev_last_recovery_alert_192 prev_last_recovery_alert_193; do
+    prev_last_recovery_alert_192 prev_last_recovery_alert_193 \
+    has_status_alert; do
     if [[ -z "${id:-}" ]]; then
       continue
     fi
@@ -388,7 +470,6 @@ main() {
     prev_last_recovery_alert_193="$(to_int "$prev_last_recovery_alert_193")"
     prev_status_192="${prev_status_192:-}"
     prev_status_193="${prev_status_193:-}"
-    has_status_alert="$(sqlite3 -readonly "$DB_PATH" -cmd ".timeout 5000" "SELECT CASE WHEN EXISTS(SELECT 1 FROM alerts WHERE system='${id}' AND name='Status') THEN 1 ELSE 0 END;" 2>/dev/null || echo 0)"
     has_status_alert="$(to_int "$has_status_alert")"
     pair="$(derive_target_193 "$host")"
     pair_valid=0
@@ -399,23 +480,18 @@ main() {
       ip193="$pair"
     fi
 
-    # 192 latency probing is disabled by request; only probe 193.
     z192="-1"
     z193="$(probe_ms "$ip193")"
 
     if (( pair_valid == 1 )); then
       z192_jitter="-1"
       z193_jitter="$(calc_jitter_ms "$z193" "$prev_z193")"
-
       z192_status="disabled"
       if (( z193 >= 0 )); then z193_status="up"; else z193_status="down"; fi
-
       z192_down_streak=0
       if [[ "$z193_status" == "down" ]]; then z193_down_streak=$((prev_down_streak_193 + 1)); else z193_down_streak=0; fi
-
       z192_jitter_streak=0
       if (( z193_jitter >= ALERT_JITTER_WARN_MS )); then z193_jitter_streak=$((prev_jitter_streak_193 + 1)); else z193_jitter_streak=0; fi
-
       z192_flap_count="$prev_flap_count_192"
       z193_flap_count="$prev_flap_count_193"
       if [[ "$prev_status_193" =~ ^(up|down)$ ]] && [[ "$prev_status_193" != "$z193_status" ]]; then
@@ -464,37 +540,69 @@ main() {
       fi
     fi
 
-    if (( z193 >= 0 )); then
-      z193_latency_chart="$z193"
-    else
-      z193_latency_chart="NULL"
-    fi
+    z193_latency_chart="$z193"
+    z193_jitter_chart="$z193_jitter"
 
-    if (( z193_jitter >= 0 )); then
-      z193_jitter_chart="$z193_jitter"
-    else
-      z193_jitter_chart="NULL"
-    fi
+    update_json="$('/usr/bin/python3' - \
+      "$id" "$z192" "$z193" "$z192_jitter" "$z193_jitter" "$z192_status" "$z193_status" \
+      "$z192_down_streak" "$z193_down_streak" "$z192_jitter_streak" "$z193_jitter_streak" \
+      "$z192_flap_count" "$z193_flap_count" "$z192_last_offline_alert" "$z193_last_offline_alert" \
+      "$z192_last_jitter_alert" "$z193_last_jitter_alert" "$z192_last_recovery_alert" "$z193_last_recovery_alert" \
+      "$now_ts" "$z193_latency_chart" "$z193_jitter_chart" <<'PY'
+import json
+import sys
 
-    id_escaped="${id//\'/\'\'}"
-    sql="${sql}UPDATE systems SET info=json_set(COALESCE(info,'{}'),"
-    sql="${sql}'$.z192',${z192},'$.z193',${z193},"
-    sql="${sql}'$.z192_jitter',${z192_jitter},'$.z193_jitter',${z193_jitter},"
-    sql="${sql}'$.z192_status','${z192_status}','$.z193_status','${z193_status}',"
-    sql="${sql}'$.z192_down_streak',${z192_down_streak},'$.z193_down_streak',${z193_down_streak},"
-    sql="${sql}'$.z192_jitter_streak',${z192_jitter_streak},'$.z193_jitter_streak',${z193_jitter_streak},"
-    sql="${sql}'$.z192_flap_count',${z192_flap_count},'$.z193_flap_count',${z193_flap_count},"
-    sql="${sql}'$.z192_last_offline_alert_ts',${z192_last_offline_alert},'$.z193_last_offline_alert_ts',${z193_last_offline_alert},"
-    sql="${sql}'$.z192_last_jitter_alert_ts',${z192_last_jitter_alert},'$.z193_last_jitter_alert_ts',${z193_last_jitter_alert},"
-    sql="${sql}'$.z192_last_recovery_alert_ts',${z192_last_recovery_alert},'$.z193_last_recovery_alert_ts',${z193_last_recovery_alert},"
-    sql="${sql}'$.zt_probe_ts',${now_ts}) WHERE id='${id_escaped}';"
-    sql="${sql}INSERT INTO system_stats (id, system, stats, type, created, updated) VALUES ('r'||lower(hex(randomblob(7))), '${id_escaped}', json_object('z193l', ${z193_latency_chart}, 'z193j', ${z193_jitter_chart}, 'z193s', '${z193_status}'), 'zt1m', strftime('%Y-%m-%d %H:%M:%fZ','now'), strftime('%Y-%m-%d %H:%M:%fZ','now'));"
+def to_int(value: str) -> int:
+    return int(value)
+
+def nullable(value: str):
+    number = int(value)
+    return None if number < 0 else number
+
+payload = {
+    "systemId": sys.argv[1],
+    "info": {
+        "z192": to_int(sys.argv[2]),
+        "z193": to_int(sys.argv[3]),
+        "z192_jitter": to_int(sys.argv[4]),
+        "z193_jitter": to_int(sys.argv[5]),
+        "z192_status": sys.argv[6],
+        "z193_status": sys.argv[7],
+        "z192_down_streak": to_int(sys.argv[8]),
+        "z193_down_streak": to_int(sys.argv[9]),
+        "z192_jitter_streak": to_int(sys.argv[10]),
+        "z193_jitter_streak": to_int(sys.argv[11]),
+        "z192_flap_count": to_int(sys.argv[12]),
+        "z193_flap_count": to_int(sys.argv[13]),
+        "z192_last_offline_alert_ts": to_int(sys.argv[14]),
+        "z193_last_offline_alert_ts": to_int(sys.argv[15]),
+        "z192_last_jitter_alert_ts": to_int(sys.argv[16]),
+        "z193_last_jitter_alert_ts": to_int(sys.argv[17]),
+        "z192_last_recovery_alert_ts": to_int(sys.argv[18]),
+        "z193_last_recovery_alert_ts": to_int(sys.argv[19]),
+        "zt_probe_ts": to_int(sys.argv[20]),
+    },
+    "ztStats": {
+        "z193l": nullable(sys.argv[21]),
+        "z193j": nullable(sys.argv[22]),
+        "z193s": sys.argv[7],
+    },
+}
+print(json.dumps(payload, ensure_ascii=False))
+PY
+    )"
+
+    if (( first_update == 0 )); then
+      printf ',' >>"$payload_file"
+    fi
+    printf '%s' "$update_json" >>"$payload_file"
+    first_update=0
 
     log "system=${name} host=${host} z193=${z193} z193_jitter=${z193_jitter} z193_status=${z193_status} z193_down=${z193_down_streak} z193_js=${z193_jitter_streak}"
-  done < <(sqlite3 -readonly -separator $'\t' "$DB_PATH" -cmd ".timeout 5000" "SELECT id,name,host,COALESCE(CAST(json_extract(info,'$.z192') AS INTEGER),-1),COALESCE(CAST(json_extract(info,'$.z193') AS INTEGER),-1),COALESCE(CAST(json_extract(info,'$.z192_down_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_down_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_jitter_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_jitter_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_flap_count') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_flap_count') AS INTEGER),0),COALESCE(json_extract(info,'$.z192_status'),''),COALESCE(json_extract(info,'$.z193_status'),''),COALESCE(CAST(json_extract(info,'$.z192_last_offline_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_last_offline_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_last_jitter_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_last_jitter_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_last_recovery_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_last_recovery_alert_ts') AS INTEGER),0) FROM systems ORDER BY name;")
+  done < <(sqlite3 -readonly -separator $'\t' "$DB_PATH" -cmd ".timeout 5000" "SELECT id,name,host,COALESCE(CAST(json_extract(info,'$.z192') AS INTEGER),-1),COALESCE(CAST(json_extract(info,'$.z193') AS INTEGER),-1),COALESCE(CAST(json_extract(info,'$.z192_down_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_down_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_jitter_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_jitter_streak') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_flap_count') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_flap_count') AS INTEGER),0),COALESCE(json_extract(info,'$.z192_status'),''),COALESCE(json_extract(info,'$.z193_status'),''),COALESCE(CAST(json_extract(info,'$.z192_last_offline_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_last_offline_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_last_jitter_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_last_jitter_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z192_last_recovery_alert_ts') AS INTEGER),0),COALESCE(CAST(json_extract(info,'$.z193_last_recovery_alert_ts') AS INTEGER),0),CASE WHEN EXISTS(SELECT 1 FROM alerts WHERE system=systems.id AND name='Status') THEN 1 ELSE 0 END FROM systems ORDER BY name;")
 
-  sql="${sql}COMMIT;"
-  sqlite3 "$DB_PATH" -cmd ".timeout 15000" "$sql" >/dev/null
+  printf ']}' >>"$payload_file"
+  post_sync_payload "$payload_file"
 
   log "sync done scanned=${scanned}"
 }

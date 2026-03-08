@@ -362,3 +362,29 @@
 
 - **问题**：直接在运行中的 Hub 里改 `systems.host` 会被旧内存态覆盖回 `192.168.192.201`。
 - **解决**：改为停掉 Hub 后更新数据库，再重新启动 Hub，让 `193` 地址稳定生效。
+
+## 会话 2026-03-08（zt-latency-sync 改为 Hub API 安全写入）
+### 完成
+- [x] 确认旧版 `zt_latency_sync.sh` 仍直接对 `beszel_data/data.db` 执行 `UPDATE systems + INSERT system_stats(type='zt1m')`
+- [x] 在 Hub 中新增认证保护接口：`POST /api/beszel/zt-latency-sync`
+- [x] 脚本改为：只读 SQLite 取旧状态 + 通过 Hub API 认证写入 `systems.info` 与 `zt1m`
+- [x] 新增脚本认证回退链：`HUB_AUTH_TOKEN` -> `HUB_EMAIL/HUB_PASSWORD` -> `docker-compose.yml` 中的 Hub 用户密码
+- [x] 重建并部署 Hub：`docker build -f internal/dockerfile_hub -t beszel:zt-latency-email . && docker compose up -d beszel`
+- [x] 手动执行脚本验证通过：`zt1m` 时间推进、`quick_check=ok`
+- [x] 修复 launchd 下 `mktemp` 模板与 `trap` 空变量问题
+- [x] 恢复 `com.wzy.beszel.zt-latency-sync` 定时任务，并验证完整一轮 `60s` 后 `zt1m` 再次推进且数据库仍为 `ok`
+- [x] 更新 planning / 项目文档 / Obsidian / 通知
+
+### 当前状态
+- `quick_check=ok`
+- `1m` 持续推进
+- `zt1m` 持续推进
+- `com.wzy.beszel.zt-latency-sync` 已恢复定时运行，`last exit code = 0`
+- `jetson.host=192.168.193.201`，`jetson.status=up`，`jetson.info.z193_status=up`
+
+### 问题与解决
+- **问题**：即使切掉 host 侧写库任务，旧日志与 launchd 仍残留一次 `mktemp`/`payload_file` 相关异常，导致锁目录未清理。
+- **解决**：修正 `mktemp` 的 macOS 模板写法，并将 `trap` 改为对 `${payload_file:-}` 做安全清理；清理旧锁目录后恢复正常。
+
+- **问题**：launchd 首次 `kickstart` 后 `zt1m` 未推进，容易误判为新接口不可用。
+- **解决**：核查日志后发现是旧锁目录拦截，而不是新接口失败；清锁后再次执行已恢复正常。

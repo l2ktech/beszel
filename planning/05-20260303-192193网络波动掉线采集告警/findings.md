@@ -445,3 +445,30 @@
 - **发现**：最终修复后，`jetson` 已恢复为：`host=192.168.193.201`、`status=up`、`ct=1`、`z193=1ms`、`z193_status=up`，本机 `ping` 与 `45876/tcp` 也持续成功。
 - **来源**：`sqlite3 beszel_data/data.db`、本机 `ping` / `nc -vz`、`zt_latency_sync.sh` 最新日志。
 - **影响**：`jetson` 已真正回到 `193` 主链路，不再依赖 `192.168.192.201` fallback。
+
+## 2026-03-08 zt-latency-sync 直写 SQLite 的根因确认
+- **发现**：原 `scripts/zt_latency_sync.sh` 在 host 侧直接对 `beszel_data/data.db` 拼接 `BEGIN IMMEDIATE + UPDATE systems + INSERT system_stats(type='zt1m')` SQL 并执行；与此同时，容器内 Hub 也在持续通过 PocketBase 事务写同一 bind mount SQLite 文件。
+- **来源**：脚本源码与 `Hub` 当前运行方式对比。
+- **影响**：这条路径会把“host 侧 sqlite3 直写”与“容器内应用写库”混在一起，是本次多次数据库损坏和全节点掉线的高风险根因。
+
+## 2026-03-08 安全写入方案
+- **发现**：`Hub` 现有 `sys.createRecords()` 本就通过 PocketBase 事务安全写 `systems.info` 与 `system_stats`；因此新增认证保护接口 `/api/beszel/zt-latency-sync`，让脚本改为走 `Hub` 事务写入，而不是直接操作 SQLite 文件。
+- **来源**：`internal/hub/systems/system.go` 事务写入模型、`internal/hub/hub.go` 路由扩展。
+- **影响**：写入路径统一回到 Hub 进程内，避免宿主机与容器竞争同一个 SQLite 文件。
+
+- **发现**：新接口要求正常用户认证；脚本会优先使用 `HUB_AUTH_TOKEN`，否则退回到 `HUB_EMAIL/HUB_PASSWORD`，再否则从本仓库 `docker-compose.yml` 中解析 `BESZEL_HUB_USER_EMAIL/PASSWORD`，通过 `/api/collections/users/auth-with-password` 取 token。
+- **来源**：改造后的 `scripts/zt_latency_sync.sh`。
+- **影响**：无需新增明文共享密钥即可落地，同时保持接口不开放匿名写入。
+
+## 2026-03-08 改造后回归结果
+- **发现**：重建并部署 Hub 后，手动执行 `bash scripts/zt_latency_sync.sh` 可使 `zt1m` 的 `max(created)` 从 `2026-03-08 08:00:37Z` 推进到 `2026-03-08 08:17:37Z`，且 `pragma quick_check` 仍为 `ok`。
+- **来源**：手动脚本执行前后查询。
+- **影响**：说明新写入链路已经能恢复 `z193/zt1m` 采集，且不会立即把数据库写坏。
+
+- **发现**：修复 `mktemp` 与 `trap` 在 macOS `launchd` 场景下的两个小问题后，`com.wzy.beszel.zt-latency-sync` 已恢复按分钟运行；完整等待一个 `60s` 周期后，`zt1m` 从 `2026-03-08 08:19:33Z` 推进到 `2026-03-08 08:20:38Z`，`quick_check` 仍保持 `ok`。
+- **来源**：`launchctl kickstart`、日志尾部与两次 `zt1m max(created)` 对比。
+- **影响**：新方案不仅手动可用，也能稳定支撑定时任务连续运行。
+
+- **发现**：当前 `jetson / gw-4060 / macmini` 的 `z193_status` 已恢复为 `up`；`ds224` 仍为 `down`，因为它记录在 `192.168.192.188`，脚本按当前规则会推导目标到 `192.168.193.188`，而不是它的 WebSocket 主地址。
+- **来源**：恢复后 `systems.info.z193_status` 查询。
+- **影响**：主链路已恢复；如需让 `ds224` 也有正确 `z193`，后续要单独补“非 192/193 地址系统的探测目标映射规则”。
